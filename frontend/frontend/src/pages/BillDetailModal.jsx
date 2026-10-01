@@ -1,13 +1,11 @@
+import PdfDownloadActions from '../components/common/PdfDownloadActions';
 import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
 import { formatCurrency } from '../utils/calculations';
-import { downloadInvoicePDF } from '../utils/pdfGenerator';
-import { useCompany } from '../context/CompanyContext';
 import './PurchaseDetailModal.css';
 import '../styles/SalesEntry.css';
 
 export default function BillDetailModal({ open, loading, billDetail, onClose }) {
-  const { company } = useCompany();
   const bill = billDetail?.bill;
   const items = billDetail?.items || [];
   const isInterstate = (bill?.igst_amount || 0) > 0;
@@ -24,9 +22,7 @@ export default function BillDetailModal({ open, loading, billDetail, onClose }) 
             Close
           </Button>
           {bill && (
-            <Button variant="primary" onClick={() => downloadInvoicePDF(billDetail, company)}>
-              Download PDF
-            </Button>
+            <PdfDownloadActions type="sale" loadDetail={() => billDetail} />
           )}
         </>
       }

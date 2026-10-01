@@ -1,3 +1,4 @@
+import DoneBySelect from '../components/common/DoneBySelect';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Card from '../components/common/Card';
@@ -18,6 +19,7 @@ import {
   updateQuotation,
 } from '../services/quotationService';
 import { extractErrorMessage } from '../services/api';
+import { saveDraft, loadDraft, clearDraft } from '../utils/draftStorage';
 import { UNIT_OPTIONS } from '../config/units';
 import {
   computeLineAmounts,
@@ -46,11 +48,6 @@ const STATE_OPTIONS = STATES.map((value) => ({
   label: value || 'Select State',
 }));
 
-const DONE_BY_OPTIONS = [
-  { value: '', label: 'Select person' },
-  { value: 'Lalit', label: 'Lalit' },
-  { value: 'Darshit', label: 'Darshit' },
-];
 
 const createEmptyDetails = () => ({
   customer_id: null,
@@ -109,8 +106,10 @@ export default function QuotationEntry() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const newCustomerId = searchParams.get('newCustomerId');
+  const newItemId = searchParams.get('newItemId');
   const editId = searchParams.get('edit');
   const loadedEditId = useRef(null);
+  const DRAFT_KEY = 'quotation-entry';
 
   const [customers, setCustomers] = useState([]);
   const [itemRecords, setItemRecords] = useState([]);
@@ -138,16 +137,53 @@ export default function QuotationEntry() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Restores a draft saved right before a "+ Add Customer/Item" redirect,
+  // so returning here doesn't lose whatever was already filled in.
+  // Skipped in edit mode since that flow loads from the server instead.
+  useEffect(() => {
+    if (editId) return;
+    const draft = loadDraft(DRAFT_KEY);
+    if (!draft) return;
+    setDetails(draft.details);
+    setItems(draft.items);
+    setItemForm(draft.itemForm);
+    clearDraft(DRAFT_KEY);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Fills in the newly created customer's contact info onto the draft
+  // without wiping the items -- unlike selectCustomer(), this runs after
+  // returning from "+ Add Customer" and should continue the same quotation.
   useEffect(() => {
     if (!newCustomerId || !customers.length) return;
     const customer = customers.find((row) => Number(row.id) === Number(newCustomerId));
     if (!customer) return;
 
     fetchCustomerById(getCustomerId(customer))
-      .then((full) => applySelectedCustomer(full))
+      .then((full) => {
+        setDetails((previous) => ({
+          ...previous,
+          customer_id: getCustomerId(full),
+          address: full?.address || '',
+          city: full?.city || '',
+          customer_state: full?.state || '',
+          contact_no: full?.mobile || '',
+          email: full?.email || '',
+        }));
+      })
       .catch((error) => toast.error(extractErrorMessage(error)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newCustomerId, customers]);
+
+  // Fills the item entry form with the newly created item -- the user
+  // still picks quantity/price and clicks "Add" like any other item.
+  useEffect(() => {
+    if (!newItemId || !itemRecords.length) return;
+    const item = itemRecords.find((row) => Number(getItemId(row)) === Number(newItemId));
+    if (!item) return;
+    selectItem({ value: getItemId(item), record: item });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newItemId, itemRecords]);
 
   useEffect(() => {
     if (
@@ -180,6 +216,7 @@ export default function QuotationEntry() {
           contact_no: quotation.contact_no || customer?.mobile || '',
           email: quotation.email || customer?.email || '',
           done_by: quotation.done_by || '',
+          _savedDoneBy: quotation.done_by || '',
           brokerage: quotation.brokerage ?? 0,
           broker_remarks: quotation.broker_remarks || '',
           delivery_date: quotation.delivery_date || '',
@@ -242,15 +279,45 @@ export default function QuotationEntry() {
     [itemRecords],
   );
 
-  const totals = useMemo(() => computeTotals(items), [items]);
-  const liveAmount = useMemo(() => computeLineAmounts(itemForm).amount, [itemForm]);
+  const calculationItems = useMemo(
+    () => (
+      details.is_gst
+        ? items
+        : items.map((item) => ({
+            ...item,
+            sgst: 0,
+            cgst: 0,
+            igst: 0,
+          }))
+    ),
+    [items, details.is_gst],
+  );
+
+  const calculationItemForm = useMemo(
+    () => (
+      details.is_gst
+        ? itemForm
+        : {
+            ...itemForm,
+            sgst: 0,
+            cgst: 0,
+            igst: 0,
+          }
+    ),
+    [itemForm, details.is_gst],
+  );
+
+  const totals = useMemo(
+    () => computeTotals(calculationItems),
+    [calculationItems],
+  );
+
+  const liveAmount = useMemo(
+    () => computeLineAmounts(calculationItemForm).amount,
+    [calculationItemForm],
+  );
 
   const changeDetail = (field, value) => {
-    if (field === 'is_gst' && !value) {
-      setItemForm((previous) => ({ ...previous, sgst: 0, cgst: 0, igst: 0 }));
-      setItems((previous) => previous.map((item) => ({ ...item, sgst: 0, cgst: 0, igst: 0 })));
-    }
-
     setDetails((previous) => {
       const next = { ...previous, [field]: value };
       if (field === 'quotation_date' || field === 'due_term') {
@@ -400,7 +467,6 @@ export default function QuotationEntry() {
     const errors = {};
     if (!details.customer_id) errors.customer_id = 'Customer is required.';
     if (!details.quotation_date) errors.quotation_date = 'Quotation date is required.';
-    if (details.quotation_date < today()) errors.quotation_date = 'Past quotation dates are not allowed.';
 
     if (details.show_shipping_address_on_bill) {
       if (!details.ship_to.trim()) errors.ship_to = 'Ship To is required.';
@@ -507,7 +573,10 @@ export default function QuotationEntry() {
             <button
               type="button"
               className="gt-plus"
-              onClick={() => navigate('/customers?openAdd=1&returnTo=/quotation-entry')}
+              onClick={() => {
+                saveDraft(DRAFT_KEY, { details, items, itemForm });
+                navigate('/customers?openAdd=1&returnTo=/quotation-entry');
+              }}
               title="Add new customer"
               aria-label="Add new customer"
             >
@@ -520,7 +589,6 @@ export default function QuotationEntry() {
           <FormInput
             label="Quotation Date"
             type="date"
-            min={today()}
             value={details.quotation_date}
             onChange={(value) => changeDetail('quotation_date', value)}
             required
@@ -545,11 +613,11 @@ export default function QuotationEntry() {
           />
           <FormInput label="Contact No." value={details.contact_no} onChange={() => {}} disabled />
           <FormInput label="Email" value={details.email} onChange={() => {}} disabled />
-          <FormSelect
+          <DoneBySelect
             label="Done By"
             value={details.done_by}
             onChange={(value) => changeDetail('done_by', value)}
-            options={DONE_BY_OPTIONS}
+            savedValue={details._savedDoneBy}
           />
           <FormCheckbox
             label="GST Applicable"
@@ -575,17 +643,37 @@ export default function QuotationEntry() {
 
       <Card title="Item Entry" className="gt-card">
         <div className="gt-item-top">
-          <SearchableSelect
-            label="Item Name"
-            options={itemOptions}
-            value={itemForm.item_id}
-            onChange={selectItem}
-            placeholder="Search item name..."
-            required
-            error={itemErrors.item_name}
-          />
+          <div className="gt-with-action">
+            <SearchableSelect
+              label="Item Name"
+              options={itemOptions}
+              value={itemForm.item_id}
+              onChange={selectItem}
+              placeholder="Search item name..."
+              required
+              error={itemErrors.item_name}
+            />
+            <button
+              type="button"
+              className="gt-plus"
+              onClick={() => {
+                saveDraft(DRAFT_KEY, { details, items, itemForm });
+                navigate('/item-master?openAdd=1&returnTo=/quotation-entry');
+              }}
+              title="Add new item"
+              aria-label="Add new item"
+            >
+              +
+            </button>
+          </div>
           <FormInput label="HSN Code" value={itemForm.hsn_code} onChange={() => {}} disabled required />
-          <FormSelect label="Unit" value={itemForm.unit} onChange={(value) => changeItem('unit', value)} options={UNIT_OPTIONS} />
+          <FormSelect
+            label="Unit"
+            value={itemForm.unit}
+            onChange={() => {}}
+            options={UNIT_OPTIONS}
+            disabled
+          />
         </div>
 
         <div className="gt-item-numbers sales-entry__item-numbers">
@@ -641,8 +729,19 @@ export default function QuotationEntry() {
                 <tr key={row._rowId}>
                   <td>{index + 1}</td><td>{row.item_name}</td><td>{row.hsn_code}</td>
                   <td>{row.quantity}</td><td>{row.unit}</td><td>{formatCurrency(row.price)}</td>
-                  <td>{row.disc_percent}%</td><td>{row.sgst}%</td><td>{row.cgst}%</td><td>{row.igst}%</td>
-                  <td>{formatCurrency(computeLineAmounts(row).amount)}</td>
+                  <td>{row.disc_percent}%</td>
+                  <td>{details.is_gst ? row.sgst : 0}%</td>
+                  <td>{details.is_gst ? row.cgst : 0}%</td>
+                  <td>{details.is_gst ? row.igst : 0}%</td>
+                  <td>
+                    {formatCurrency(
+                      computeLineAmounts(
+                        details.is_gst
+                          ? row
+                          : { ...row, sgst: 0, cgst: 0, igst: 0 },
+                      ).amount,
+                    )}
+                  </td>
                   <td>
                     <button type="button" className="gt-link" onClick={() => { setItemForm(row); setEditingIndex(index); }}>Edit</button>
                     <button type="button" className="gt-link gt-link--danger" onClick={() => setItems((previous) => previous.filter((_, rowIndex) => rowIndex !== index))}>Delete</button>

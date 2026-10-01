@@ -2,9 +2,14 @@ import api from './api';
 
 const QUOTATION_ENDPOINT = '/quotations/';
 
-export function fetchQuotations({ search = '' } = {}) {
+export function fetchQuotations({ page, pageSize = 20, search = '' } = {}) {
   return api.get(QUOTATION_ENDPOINT, {
-    params: { search: search || undefined, limit: 500 },
+    params: {
+      page,
+      page_size: page === undefined ? undefined : pageSize,
+      search: search || undefined,
+      limit: page === undefined ? 500 : undefined,
+    },
   }).then((res) => res.data);
 }
 

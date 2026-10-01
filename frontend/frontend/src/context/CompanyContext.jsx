@@ -11,8 +11,6 @@ export function CompanyProvider({ children }) {
     setLoading(true);
     return fetchCompanyProfile()
       .then(setCompany)
-      // Backend not reachable yet / first run -- keep the safe default so
-      // PDF generation elsewhere never breaks on missing fields.
       .catch(() => setCompany(DEFAULT_COMPANY_PROFILE))
       .finally(() => setLoading(false));
   }, []);

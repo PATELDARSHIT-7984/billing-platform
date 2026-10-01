@@ -1,30 +1,60 @@
 import api from './api';
 
-// Confirmed against your purchase_router.py (prefix="/purchases").
-const PURCHASES_ENDPOINT = '/purchases/';
+const PURCHASES_ENDPOINT = '/purchases';
 
-// GET /purchases/ -> list[PurchaseListResponse] (used by Purchase History)
-export function fetchPurchases({ search = '' } = {}) {
-  return api
-    .get(PURCHASES_ENDPOINT, { params: { search: search || undefined, limit: 500 } })
-    .then((res) => res.data);
+const purchaseUrl = (id = '') => (
+  id ? `${PURCHASES_ENDPOINT}/${id}` : `${PURCHASES_ENDPOINT}/`
+);
+
+/**
+ * GET /purchases/
+ * Returns a legacy list, or history metadata when page is supplied.
+ */
+export async function fetchPurchases({ page, pageSize = 20, search = '', limit = 500 } = {}) {
+  const { data } = await api.get(purchaseUrl(), {
+    params: {
+      page,
+      page_size: page === undefined ? undefined : pageSize,
+      search: search.trim() || undefined,
+      limit: page === undefined ? limit : undefined,
+    },
+  });
+
+  return data;
 }
 
-// GET /purchases/{id} -> PurchaseResponse (full bill incl. items)
-export function fetchPurchaseById(id) {
-  return api.get(`${PURCHASES_ENDPOINT}${id}`).then((res) => res.data);
+/**
+ * GET /purchases/{id}
+ * Returns full PurchaseResponse including items.
+ */
+export async function fetchPurchaseById(id) {
+  const { data } = await api.get(purchaseUrl(id));
+
+  return data;
 }
 
-// Payload matches PurchaseCreate. Purchase bill_no and order_no are entered manually.
-export function createPurchase(payload) {
-  return api.post(PURCHASES_ENDPOINT, payload).then((res) => res.data);
+/**
+ * POST /purchases/
+ * Creates a new Purchase.
+ */
+export async function createPurchase(payload) {
+  const { data } = await api.post(
+    purchaseUrl(),
+    payload,
+  );
+
+  return data;
 }
 
-// payload shape matches PurchaseUpdate exactly
-export function updatePurchase(id, payload) {
-  return api.put(`${PURCHASES_ENDPOINT}${id}`, payload).then((res) => res.data);
-}
+/**
+ * PUT /purchases/{id}
+ * Updates an existing Purchase.
+ */
+export async function updatePurchase(id, payload) {
+  const { data } = await api.put(
+    purchaseUrl(id),
+    payload,
+  );
 
-export function deletePurchase(id) {
-  return api.delete(`${PURCHASES_ENDPOINT}${id}`).then((res) => res.data);
+  return data;
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/common/PageHeader';
 import DataTable from '../components/common/DataTable';
 import ConfirmDialog from '../components/common/ConfirmDialog';
@@ -27,6 +28,10 @@ const COLUMNS = [
 
 export default function CustomerManagement() {
   const toast = useToast();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const returnTo = searchParams.get('returnTo');
+  const shouldOpenAdd = searchParams.get('openAdd') === '1';
 
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -53,6 +58,11 @@ export default function CustomerManagement() {
   useEffect(() => {
     loadCustomers('');
   }, [loadCustomers]);
+
+  useEffect(() => {
+    if (shouldOpenAdd) openAddModal();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldOpenAdd]);
 
   useEffect(() => {
     const timer = setTimeout(() => loadCustomers(search), 350);
@@ -85,10 +95,14 @@ export default function CustomerManagement() {
       : createCustomer(payload);
 
     request
-      .then(() => {
+      .then((savedCustomer) => {
         toast.success(modalMode === 'edit' ? 'Customer updated successfully.' : 'Customer added successfully.');
         setModalOpen(false);
         loadCustomers(search);
+
+        if (modalMode === 'add' && returnTo) {
+          navigate(`${returnTo}?newCustomerId=${savedCustomer.id}`);
+        }
       })
       .catch((err) => toast.error(extractErrorMessage(err)))
       .finally(() => setSubmitting(false));

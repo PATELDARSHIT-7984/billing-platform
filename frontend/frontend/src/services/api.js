@@ -8,13 +8,14 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
 });
-
-// Normalizes FastAPI error shapes ({detail: "..."} or {detail: [{msg: ...}]})
-// into a single readable string so every page can show it the same way.
 export function extractErrorMessage(error) {
-  const detail = error?.response?.data?.detail;
+  const data = error?.response?.data;
+  const detail = data?.detail;
 
   if (!detail) {
+    // The global error envelope (api/utils/response.py) uses `message`
+    // instead of FastAPI's default `detail` key -- check that too.
+    if (data?.message) return data.message;
     if (error?.message === 'Network Error') {
       return 'Cannot reach the server. Please check your connection or try again.';
     }

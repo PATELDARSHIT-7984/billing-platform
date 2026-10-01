@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/common/PageHeader';
 import DataTable from '../components/common/DataTable';
 import ConfirmDialog from '../components/common/ConfirmDialog';
@@ -22,14 +23,19 @@ function uniqueSorted(values) {
 
 export default function ItemMaster() {
   const toast = useToast();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  const returnTo = searchParams.get('returnTo');
+  const shouldOpenAdd = searchParams.get('openAdd') === '1';
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
   const [modalOpen, setModalOpen] = useState(false);
-  const [modalMode, setModalMode] = useState('add'); // 'add' | 'edit'
-  const [selectedItem, setSelectedItem] = useState(null); // full ItemMasterResponse, only set in edit mode
+  const [modalMode, setModalMode] = useState('add');
+  const [selectedItem, setSelectedItem] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -38,34 +44,30 @@ export default function ItemMaster() {
 
   const loadItems = useCallback((searchTerm) => {
     setLoading(true);
+
     fetchItems({ search: searchTerm })
       .then(setItems)
       .catch((err) => toast.error(extractErrorMessage(err)))
       .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [toast]);
 
-  // Initial load
   useEffect(() => {
     loadItems('');
   }, [loadItems]);
 
-  // Debounced search -- refetches from the backend's `search` query param
   useEffect(() => {
     const timer = setTimeout(() => loadItems(search), 350);
     return () => clearTimeout(timer);
   }, [search, loadItems]);
 
-  // The list endpoint (ItemMasterListResponse) already returns category/brand
-  // for the rows on screen, which is exactly what we want here -- lets the
-  // Add/Edit form suggest previously-used values without a separate API call.
   const categoryOptions = useMemo(
     () => uniqueSorted(items.map((i) => i.category)).map((v) => ({ value: v, label: v })),
-    [items]
+    [items],
   );
+
   const brandOptions = useMemo(
     () => uniqueSorted(items.map((i) => i.brand)).map((v) => ({ value: v, label: v })),
-    [items]
+    [items],
   );
 
   const COLUMNS = [
@@ -124,8 +126,12 @@ export default function ItemMaster() {
     setModalOpen(true);
   };
 
-  // The table row only carries ItemMasterListResponse fields (no mrp,
-  // description, or dates) -- fetch the full record before opening the form so nothing gets silently blanked out on save.
+  useEffect(() => {
+    if (shouldOpenAdd) {
+      openAddModal();
+    }
+  }, [shouldOpenAdd]);
+
   const openEditModal = (row) => {
     fetchItemById(row.id)
       .then((fullItem) => {
@@ -138,14 +144,30 @@ export default function ItemMaster() {
 
   const handleFormSubmit = (payload) => {
     setSubmitting(true);
-    const request =
-      modalMode === 'edit' ? updateItem(selectedItem.id, payload) : createItem(payload);
+
+    let request;
+
+    if (modalMode === 'edit') {
+      const { current_stock, ...updatePayload } = payload;
+      request = updateItem(selectedItem.id, updatePayload);
+    } else {
+      request = createItem(payload);
+    }
 
     request
-      .then(() => {
-        toast.success(modalMode === 'edit' ? 'Item updated successfully.' : 'Item added successfully.');
+      .then((savedItem) => {
+        toast.success(
+          modalMode === 'edit'
+            ? 'Item updated successfully.'
+            : 'Item added successfully.',
+        );
+
         setModalOpen(false);
         loadItems(search);
+
+        if (modalMode === 'add' && returnTo) {
+          navigate(`${returnTo}?newItemId=${savedItem.id}`);
+        }
       })
       .catch((err) => toast.error(extractErrorMessage(err)))
       .finally(() => setSubmitting(false));
@@ -158,6 +180,7 @@ export default function ItemMaster() {
 
   const confirmDelete = () => {
     setDeleting(true);
+
     deleteItem(itemToDelete.id)
       .then(() => {
         toast.success(`"${itemToDelete.name}" deleted successfully.`);

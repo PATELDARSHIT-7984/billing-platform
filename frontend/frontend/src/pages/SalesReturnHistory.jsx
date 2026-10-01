@@ -1,20 +1,31 @@
-import { useCallback, useEffect, useState } from 'react';
+import PdfDownloadActions from '../components/common/PdfDownloadActions';
+import Pagination from '../components/common/Pagination';
+import useHistoryPage from '../hooks/useHistoryPage';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+
 import PageHeader from '../components/common/PageHeader';
 import DataTable from '../components/common/DataTable';
 import SalesReturnDetailModal from './SalesReturnDetailModal';
+
 import { useToast } from '../context/ToastContext';
 import {
+  deleteSalesReturn,
   fetchSalesReturnById,
   fetchSalesReturns,
 } from '../services/salesReturnService';
 import { extractErrorMessage } from '../services/api';
 import { formatCurrency } from '../utils/calculations';
+
 import './PurchaseHistory.css';
 
 function compactValues(values = [], fallback = '—') {
   const cleaned = values.filter(
-    (value) => value !== null && value !== undefined && value !== '',
+    (value) => (
+      value !== null
+      && value !== undefined
+      && value !== ''
+    ),
   );
 
   if (!cleaned.length) return fallback;
@@ -27,46 +38,66 @@ export default function SalesReturnHistory() {
   const toast = useToast();
   const navigate = useNavigate();
 
-  const [records, setRecords] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailData, setDetailData] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
 
-  const loadRecords = useCallback((searchTerm) => {
-    setLoading(true);
+  const { items: records, loading, reload: loadRecords, pagination } = useHistoryPage(fetchSalesReturns, { search });
 
-    fetchSalesReturns({ search: searchTerm })
-      .then(setRecords)
-      .catch((error) => toast.error(extractErrorMessage(error)))
-      .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    loadRecords('');
-  }, [loadRecords]);
-
-  useEffect(() => {
-    const timer = setTimeout(() => loadRecords(search), 350);
-    return () => clearTimeout(timer);
-  }, [search, loadRecords]);
-
-  const openDetail = (row) => {
+  async function openDetail(row) {
     setDetailLoading(true);
     setDetailOpen(true);
 
-    fetchSalesReturnById(row.id)
-      .then(setDetailData)
-      .catch((error) => {
-        toast.error(extractErrorMessage(error));
+    try {
+      const data = await fetchSalesReturnById(row.id);
+      setDetailData(data);
+    } catch (error) {
+      toast.error(extractErrorMessage(error));
+      setDetailOpen(false);
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  function handleEdit(row) {
+    navigate(`/sales-return-entry?edit=${row.id}`);
+  }
+
+  async function handleDelete(row) {
+    const confirmed = window.confirm(
+      `Delete sales return ${row.return_no || row.id}?`,
+    );
+
+    if (!confirmed) return;
+
+    setDeletingId(row.id);
+
+    try {
+      await deleteSalesReturn(row.id);
+
+      if (detailData?.id === row.id) {
         setDetailOpen(false);
-      })
-      .finally(() => setDetailLoading(false));
-  };
+        setDetailData(null);
+      }
+
+      toast.success(
+        `Sales return ${row.return_no || row.id} deleted successfully.`,
+      );
+
+      await loadRecords();
+    } catch (error) {
+      toast.error(extractErrorMessage(error));
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   const columns = [
+    { key: 'pdf', label: 'Download PDF', render: (row) => (
+      <PdfDownloadActions type="salesReturn" loadDetail={() => fetchSalesReturnById(row.id)} />
+    ) },
     {
       key: 'return_no',
       label: 'Return No.',
@@ -134,7 +165,7 @@ export default function SalesReturnHistory() {
     <div className="page">
       <PageHeader
         title="Sales Return History"
-        subtitle="View and update sales returns. Delete is disabled to protect stock history."
+        subtitle="View, update, or delete customer sales returns."
         searchValue={search}
         onSearchChange={setSearch}
         searchPlaceholder="Search by return no., invoice, or customer..."
@@ -143,21 +174,26 @@ export default function SalesReturnHistory() {
       <DataTable
         columns={columns}
         rows={records}
-        loading={loading}
+        loading={loading || deletingId !== null}
         onRowClick={openDetail}
-        onEdit={(row) => navigate(`/sales-return-entry?edit=${row.id}`)}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
         emptyMessage={
           search
             ? `No sales returns match "${search}".`
             : 'No sales returns recorded yet.'
         }
       />
+      <Pagination {...pagination} />
 
       <SalesReturnDetailModal
         open={detailOpen}
         loading={detailLoading}
         salesReturn={detailData}
-        onClose={() => setDetailOpen(false)}
+        onClose={() => {
+          setDetailOpen(false);
+          setDetailData(null);
+        }}
       />
     </div>
   );

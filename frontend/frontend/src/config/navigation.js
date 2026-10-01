@@ -9,6 +9,7 @@ import {
   BillHistoryIcon,
   ReportsIcon,
   SettingsIcon,
+  RojmelIcon,
 } from '../components/layout/icons';
 
 export const NAV_ITEMS = [
@@ -18,8 +19,15 @@ export const NAV_ITEMS = [
   { path: '/items', label: 'Item Master', icon: ItemIcon },
   { path: '/purchase-entry', label: 'Purchase Entry', icon: PurchaseIcon },
   { path: '/purchase-history', label: 'Purchase History', icon: PurchaseHistoryIcon },
+  { path: '/purchase-return-entry', label: 'Purchase Return Entry', icon: PurchaseIcon },
+  { path: '/purchase-return-history', label: 'Purchase Return History', icon: PurchaseHistoryIcon },
   { path: '/sales-entry', label: 'Sales Entry', icon: SalesIcon },
-  { path: '/bill-history', label: 'Bill History', icon: BillHistoryIcon },
+  { path: '/sales-history', label: 'Sales History', icon: BillHistoryIcon },
+  { path: '/sales-return-entry', label: 'Sales Return Entry', icon: SalesIcon },
+  { path: '/sales-return-history', label: 'Sales Return History', icon: BillHistoryIcon },
+  { path: '/quotation-entry', label: 'Quotation Entry', icon: SalesIcon },
+  { path: '/quotation-history', label: 'Quotation History', icon: BillHistoryIcon },
+  { path: '/rojmel', label: 'Rojmel', icon: RojmelIcon },
   { path: '/reports', label: 'Reports', icon: ReportsIcon },
   { path: '/company-settings', label: 'Company Settings', icon: SettingsIcon },
 ];

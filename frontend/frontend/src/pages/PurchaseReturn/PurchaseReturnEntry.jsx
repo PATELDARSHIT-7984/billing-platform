@@ -1,3 +1,4 @@
+import DoneBySelect from '../../components/common/DoneBySelect';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Card from '../../components/common/Card';
@@ -42,11 +43,6 @@ const STATE_OPTIONS = STATES.map((value) => ({
   label: value || 'Select State',
 }));
 
-const DONE_BY_OPTIONS = [
-  { value: '', label: 'Select person' },
-  { value: 'Lalit', label: 'Lalit' },
-  { value: 'Darshit', label: 'Darshit' },
-];
 
 const createEmptyDetails = () => ({
   party_id: null,
@@ -148,7 +144,6 @@ export default function PurchaseReturnEntry() {
         .catch((error) => toast.error(extractErrorMessage(error)));
     }
 
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editId]);
 
 
@@ -180,6 +175,7 @@ export default function PurchaseReturnEntry() {
           ),
           email: purchaseReturn.email || selectedParty?.email || '',
           done_by: purchaseReturn.done_by || '',
+          _savedDoneBy: purchaseReturn.done_by || '',
           brokerage: purchaseReturn.brokerage ?? 0,
           broker_remarks: purchaseReturn.broker_remarks || '',
           delivery_date: purchaseReturn.delivery_date || '',
@@ -194,6 +190,12 @@ export default function PurchaseReturnEntry() {
 
         setItems((purchaseReturn.items || []).map((item) => ({
           ...item,
+          current_stock: Number(
+            item.available_stock
+            ?? item.current_stock
+            ?? item.quantity
+            ?? 0
+          ),
           _rowId: ++rowCounter,
         })));
 
@@ -226,17 +228,6 @@ export default function PurchaseReturnEntry() {
     [itemRecords],
   );
 
-  const categoryOptions = useMemo(
-    () => [...new Set(itemRecords.map((item) => item.category).filter(Boolean))]
-      .map((value) => ({ value, label: value })),
-    [itemRecords],
-  );
-
-  const brandOptions = useMemo(
-    () => [...new Set(itemRecords.map((item) => item.brand).filter(Boolean))]
-      .map((value) => ({ value, label: value })),
-    [itemRecords],
-  );
 
   const totals = useMemo(() => computeTotals(items), [items]);
   const liveAmount = useMemo(() => computeLineAmounts(itemForm).amount, [itemForm]);
@@ -275,8 +266,6 @@ export default function PurchaseReturnEntry() {
         : '',
       email: party?.email || '',
 
-      // A supplier change must never carry the previous supplier's
-      // delivery address into the new bill.
       delivery_date: '',
       ship_to: '',
       ship_to_address: '',
@@ -287,8 +276,6 @@ export default function PurchaseReturnEntry() {
       show_shipping_address_on_bill: false,
     }));
 
-    // Clear only supplier-dependent transaction data. Bill number,
-    // order number, dates, due term, Done By and brokerage stay intact.
     setItems([]);
     setItemForm(createEmptyItem());
     setEditingIndex(null);
@@ -306,8 +293,6 @@ export default function PurchaseReturnEntry() {
     const nextParty = option?.record || null;
     const nextPartyId = nextParty?.id || null;
 
-    // SearchableSelect may call onChange more than once while the user is
-    // interacting. Do nothing unless the actual supplier ID changed.
     if (nextPartyId === details.party_id) return;
 
     applySelectedParty(nextParty);
@@ -350,7 +335,12 @@ export default function PurchaseReturnEntry() {
       hsn_code: item.hsn_code || '',
       unit: item.unit || previous.unit,
       price: item.purchase_price ?? previous.price,
-      current_stock: item.current_stock ?? 0,
+      current_stock: Number(item.current_stock ?? 0) + (
+        editingIndex !== null
+        && Number(items[editingIndex]?.item_id) === Number(item.id)
+          ? Number(items[editingIndex]?.quantity || 0)
+          : 0
+      ),
       cgst: item.cgst ?? previous.cgst,
       sgst: item.sgst ?? previous.sgst,
       igst: 0,
@@ -396,12 +386,6 @@ export default function PurchaseReturnEntry() {
       errors.price = 'Enter a valid price.';
     }
 
-    if (
-      !errors.quantity
-      && Number(itemForm.quantity) > Number(itemForm.current_stock || 0)
-    ) {
-      errors.quantity = `Only ${itemForm.current_stock || 0} available in stock.`;
-    }
 
     if (Object.keys(errors).length) {
       setItemErrors(errors);
@@ -679,11 +663,11 @@ export default function PurchaseReturnEntry() {
             onChange={(value) => changeDetail('email', value)}
           />
 
-          <FormSelect
+          <DoneBySelect
             label="Done By"
             value={details.done_by}
             onChange={(value) => changeDetail('done_by', value)}
-            options={DONE_BY_OPTIONS}
+            savedValue={details._savedDoneBy}
           />
 
           <FormCheckbox
@@ -712,7 +696,7 @@ export default function PurchaseReturnEntry() {
 
       <Card
         title="Item Entry"
-        subtitle="Search an existing item or add a new item without leaving this purchaseReturn."
+        subtitle="Search an existing item from Item Master and add it to this purchase return."
         className="gt-card"
       >
         <div className="gt-item-top">
@@ -768,8 +752,12 @@ export default function PurchaseReturnEntry() {
             error={itemErrors.price}
           />
           <div className="gt-live-amount">
-            <span>Current Stock</span>
-            <strong>{itemForm.item_id ? itemForm.current_stock : '—'}</strong>
+            <span>Available Stock</span>
+            <strong>
+              {itemForm.item_id
+                ? Number(itemForm.current_stock || 0)
+                : '—'}
+            </strong>
           </div>
 
           <FormInput
@@ -864,8 +852,17 @@ export default function PurchaseReturnEntry() {
                       type="button"
                       className="gt-link"
                       onClick={() => {
-                        setItemForm(row);
+                        setItemForm({
+                          ...row,
+                          current_stock: Number(
+                            row.current_stock
+                            ?? row.available_stock
+                            ?? row.quantity
+                            ?? 0
+                          ),
+                        });
                         setEditingIndex(index);
+                        setItemErrors({});
                       }}
                     >
                       Edit

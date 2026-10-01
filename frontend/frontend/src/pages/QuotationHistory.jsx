@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import PdfDownloadActions from '../components/common/PdfDownloadActions';
+import Pagination from '../components/common/Pagination';
+import useHistoryPage from '../hooks/useHistoryPage';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/common/PageHeader';
 import DataTable from '../components/common/DataTable';
@@ -19,8 +22,6 @@ function compact(values = []) {
 export default function QuotationHistory() {
   const toast = useToast();
   const navigate = useNavigate();
-  const [records, setRecords] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -28,13 +29,7 @@ export default function QuotationHistory() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
-  const load = useCallback((term = '') => {
-    setLoading(true);
-    fetchQuotations({ search: term }).then(setRecords).catch((e) => toast.error(extractErrorMessage(e))).finally(() => setLoading(false));
-  }, [toast]);
-
-  useEffect(() => { load(''); }, [load]);
-  useEffect(() => { const timer = setTimeout(() => load(search), 350); return () => clearTimeout(timer); }, [search, load]);
+  const { items: records, loading, reload: load, pagination } = useHistoryPage(fetchQuotations, { search });
 
   const openDetail = (row) => {
     setDetailOpen(true); setDetailLoading(true);
@@ -44,10 +39,13 @@ export default function QuotationHistory() {
   const confirmDelete = () => {
     if (!deleteTarget) return;
     setDeleting(true);
-    deleteQuotation(deleteTarget.id).then(() => { toast.success('Quotation deleted successfully.'); setDeleteTarget(null); load(search); }).catch((e) => toast.error(extractErrorMessage(e))).finally(() => setDeleting(false));
+    deleteQuotation(deleteTarget.id).then(() => { toast.success('Quotation deleted successfully.'); setDeleteTarget(null); load(); }).catch((e) => toast.error(extractErrorMessage(e))).finally(() => setDeleting(false));
   };
 
   const columns = [
+    { key: 'pdf', label: 'Download PDF', render: (row) => (
+      <PdfDownloadActions type="quotation" loadDetail={() => fetchQuotationById(row.id)} />
+    ) },
     { key: 'quotation_no', label: 'Quotation No.', render: (row) => <span className="purchase-history__bill-no">#{row.quotation_no}</span> },
     { key: 'quotation_date', label: 'Date', render: (row) => row.quotation_date ? new Date(row.quotation_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—' },
     { key: 'customer_name', label: 'Customer', render: (row) => row.customer_name || '—' },
@@ -60,6 +58,7 @@ export default function QuotationHistory() {
   return <div className="page">
     <PageHeader title="Quotation History" subtitle="View, update, or delete saved customer quotations." searchValue={search} onSearchChange={setSearch} searchPlaceholder="Search by quotation number or customer..." />
     <DataTable columns={columns} rows={records} loading={loading} onRowClick={openDetail} onEdit={(row) => navigate(`/quotation-entry?edit=${row.id}`)} onDelete={setDeleteTarget} emptyMessage="No quotations found." />
+    <Pagination {...pagination} />
     <QuotationDetailModal open={detailOpen} loading={detailLoading} quotation={detailData} onClose={() => setDetailOpen(false)} />
     <ConfirmDialog open={Boolean(deleteTarget)} title="Delete Quotation" message={`Delete quotation ${deleteTarget?.quotation_no || ''}? This will not affect Sales or stock.`} confirmLabel="Delete" loading={deleting} onConfirm={confirmDelete} onCancel={() => !deleting && setDeleteTarget(null)} />
   </div>;

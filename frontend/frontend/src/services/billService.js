@@ -1,33 +1,50 @@
 import api from './api';
 
-// ======================= Bills API (/bill) =======================
-const BILL_ENDPOINT = '/bill/';
+const BILL_ENDPOINT = '/bills/';
 
-// List rows (BillListResponse) -- used by Bill History's table.
-export function fetchBills({ search = '' } = {}) {
-  return api
-    .get(BILL_ENDPOINT, { params: { search: search || undefined, limit: 500 } })
-    .then((res) => res.data);
+export async function fetchBills({ page, pageSize = 20, search = '' } = {}) {
+  const { data } = await api.get(BILL_ENDPOINT, {
+    params: {
+      page,
+      page_size: page === undefined ? undefined : pageSize,
+      search: search.trim() || undefined,
+      limit: page === undefined ? 500 : undefined,
+    },
+  });
+
+  return data;
 }
 
-// The only endpoint that returns line items ({ bill, items }) -- used for
-// the detail modal, PDF generation, and right after Save in Sales Entry.
-export function fetchBillById(id) {
-  return api.get(`${BILL_ENDPOINT}${id}`).then((res) => res.data);
+export async function fetchBillById(id) {
+  const { data } = await api.get(
+    `${BILL_ENDPOINT}${id}`,
+  );
+
+  return data;
 }
 
-// Payload: { customer_id, bill_date, is_interstate, remarks, items: [{ item_id, quantity }] }.
-// Sale price and GST % always come from Item Master server-side -- there is
-// no field here for a custom/edited price (see SalesEntry.jsx).
-export function createBill(payload) {
-  return api.post(BILL_ENDPOINT, payload).then((res) => res.data);
+export async function createBill(payload) {
+  const { data } = await api.post(
+    BILL_ENDPOINT,
+    payload,
+  );
+
+  return data;
 }
 
-export function updateBill(id, payload) {
-  return api.put(`${BILL_ENDPOINT}${id}`, payload).then((res) => res.data);
+export async function updateBill(id, payload) {
+  const { data } = await api.put(
+    `${BILL_ENDPOINT}${id}`,
+    payload,
+  );
+
+  return data;
 }
 
-// Soft delete -- restores the stock this bill had deducted.
-export function deleteBill(id) {
-  return api.delete(`${BILL_ENDPOINT}${id}`).then((res) => res.data);
+export async function deleteBill(id) {
+  const { data } = await api.delete(
+    `${BILL_ENDPOINT}${id}`,
+  );
+
+  return data;
 }

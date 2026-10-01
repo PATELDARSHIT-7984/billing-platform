@@ -1,16 +1,27 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api.database.database import engine
-from api.database.connection import Base
+from api.config.database import engine
+from api.config.database import Base
+from api.config.exceptions import AppException
+from fastapi.exceptions import RequestValidationError
+from api.config.exception_handlers import (
+    app_exception_handler,
+    validation_exception_handler,
+    general_exception_handler
+)
+from api.router import purchase
+from api.router import party
+from api.router import customer
+from api.router import bill
+from api.router import item_master
+from api.router import purchase_return
+from api.router import quotation
+from api.router import sales_return
+from api.router import dashboard
 
-from api.router import purchase_router
-from api.router import party_router
-from api.router import customer_router
-from api.router import bill_router
-from api.router import item_master_router
-from api.router import purchase_return_router
-from api.router import quotation_router
-from api.router import sales_return_router
+pytest_plugins = (
+    "api.tests.fixtures.party_fixtures",
+)
 
 app = FastAPI()
 
@@ -23,14 +34,18 @@ app.add_middleware(
         allow_methods=["*"],
         allow_headers=["*"],
         )
-app.include_router(purchase_router.router)
-app.include_router(party_router.router)
-app.include_router(customer_router.router)  
-app.include_router(bill_router.router)    
-app.include_router(item_master_router.router)   
-app.include_router(purchase_return_router.router)
-app.include_router(quotation_router.router)
-app.include_router(sales_return_router.router)
+app.include_router(purchase.router)
+app.include_router(dashboard.router)
+app.include_router(party.router)
+app.include_router(customer.router)  
+app.include_router(bill.router)    
+app.include_router(item_master.router)   
+app.include_router(purchase_return.router)
+app.include_router(quotation.router)
+app.include_router(sales_return.router)
+app.add_exception_handler(AppException, app_exception_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(Exception, general_exception_handler)
 
 @app.get("/")
 

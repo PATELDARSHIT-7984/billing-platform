@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/common/PageHeader';
 import DataTable from '../components/common/DataTable';
 import ConfirmDialog from '../components/common/ConfirmDialog';
@@ -33,6 +34,13 @@ const COLUMNS = [
 
 export default function PartyManagement() {
   const toast = useToast();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  // When arriving via a "+ Add Party" link from another page (e.g. Rojmel,
+  // Purchase Entry), returnTo tells us where to send the user back to
+  // after a successful save, with the new party's id attached.
+  const returnTo = searchParams.get('returnTo');
+  const shouldOpenAdd = searchParams.get('openAdd') === '1';
 
   const [parties, setParties] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -73,6 +81,12 @@ export default function PartyManagement() {
     setModalOpen(true);
   };
 
+  // Opens the Add modal automatically if we were sent here via a "+" link.
+  useEffect(() => {
+    if (shouldOpenAdd) openAddModal();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldOpenAdd]);
+
   const openEditModal = (party) => {
     setModalMode('edit');
     setSelectedParty(party);
@@ -86,10 +100,14 @@ export default function PartyManagement() {
       : createParty(payload);
 
     request
-      .then(() => {
+      .then((savedParty) => {
         toast.success(modalMode === 'edit' ? 'Party updated successfully.' : 'Party added successfully.');
         setModalOpen(false);
         loadParties(search);
+
+        if (modalMode === 'add' && returnTo) {
+          navigate(`${returnTo}?newPartyId=${savedParty.id}`);
+        }
       })
       .catch((err) => toast.error(extractErrorMessage(err)))
       .finally(() => setSubmitting(false));

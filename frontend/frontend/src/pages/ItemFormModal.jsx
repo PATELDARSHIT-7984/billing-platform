@@ -252,6 +252,7 @@ export default function ItemFormModal({
             value={form.current_stock}
             onChange={setField('current_stock')}
             error={errors.current_stock}
+            disabled={mode === 'edit'}
           />
           <FormInput
             label="CGST Rate %"

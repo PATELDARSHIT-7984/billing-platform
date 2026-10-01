@@ -1,19 +1,17 @@
+import PdfDownloadActions from '../components/common/PdfDownloadActions';
 import { useCallback, useEffect, useState } from 'react';
 import PageHeader from '../components/common/PageHeader';
 import DataTable from '../components/common/DataTable';
 import ConfirmDialog from '../components/common/ConfirmDialog';
 import BillDetailModal from './BillDetailModal';
 import { useToast } from '../context/ToastContext';
-import { useCompany } from '../context/CompanyContext';
 import { fetchBills, fetchBillById, deleteBill } from '../services/billService';
 import { extractErrorMessage } from '../services/api';
 import { formatCurrency } from '../utils/calculations';
-import { downloadInvoicePDF } from '../utils/pdfGenerator';
 import './PurchaseHistory.css';
 
 export default function BillHistory() {
   const toast = useToast();
-  const { company } = useCompany();
 
   const [bills, setBills] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -26,7 +24,6 @@ export default function BillHistory() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [billToDelete, setBillToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
-  const [downloadingId, setDownloadingId] = useState(null);
 
   const loadBills = useCallback((searchTerm) => {
     setLoading(true);
@@ -65,22 +62,9 @@ export default function BillHistory() {
       align: 'right',
       render: (row) => <strong>{formatCurrency(row.grand_total)}</strong>,
     },
-    {
-      key: 'pdf',
-      label: 'Invoice',
-      width: 70,
-      render: (row) => (
-        <button
-          type="button"
-          className="data-table__action-btn"
-          onClick={(e) => handleDownload(row, e)}
-          disabled={downloadingId === row.bill_id}
-          title="Download PDF"
-        >
-          {downloadingId === row.bill_id ? '...' : '⬇'}
-        </button>
-      ),
-    },
+    { key: 'pdf', label: 'Download PDF', render: (row) => (
+      <PdfDownloadActions type="sale" loadDetail={() => fetchBillById(row.bill_id ?? row.id)} />
+    ) },
   ];
 
   const openDetail = (row) => {
@@ -93,15 +77,6 @@ export default function BillHistory() {
         setDetailOpen(false);
       })
       .finally(() => setDetailLoading(false));
-  };
-
-  const handleDownload = (row, e) => {
-    e.stopPropagation();
-    setDownloadingId(row.bill_id);
-    fetchBillById(row.bill_id)
-      .then((detail) => downloadInvoicePDF(detail, company))
-      .catch((err) => toast.error(extractErrorMessage(err)))
-      .finally(() => setDownloadingId(null));
   };
 
   const askDelete = (row) => {

@@ -1,8 +1,12 @@
-// Mirrors the exact formula used in purchase_service.py's
-// calculate_purchase_totals(), so what the user sees on screen always
-// matches what the backend will compute and store. Reusable for Sales
-// Entry later too, since GST-on-taxable-amount is the same shape of
-// calculation.
+// Purchase, returns and quotation use whole-rupee totals. Sales has its own
+// component-to-paise policy in salesCalculations.js.
+function roundHalfUp(value, places = 2) {
+  // Same binary-noise compensation and half-away-from-zero rule as the backend.
+  const magnitude = Math.abs(value);
+  const scale = 10 ** places;
+  const rounded = Math.floor((magnitude + Number.EPSILON * Math.max(1, magnitude)) * scale + 0.5) / scale;
+  return rounded ? Math.sign(value) * rounded : 0;
+}
 
 export function computeLineAmounts({ quantity, price, disc_percent, sgst, cgst, igst }) {
   const qty = Number(quantity) || 0;
@@ -12,13 +16,14 @@ export function computeLineAmounts({ quantity, price, disc_percent, sgst, cgst, 
   const cgstPct = Number(cgst) || 0;
   const igstPct = Number(igst) || 0;
 
-  const taxable = qty * rate * (1 - disc / 100);
+  const gross = qty * rate;
+  const taxable = gross - gross * disc / 100;
   const sgstAmt = (taxable * sgstPct) / 100;
   const cgstAmt = (taxable * cgstPct) / 100;
   const igstAmt = (taxable * igstPct) / 100;
   const amount = taxable + sgstAmt + cgstAmt + igstAmt;
 
-  return { taxable, sgstAmt, cgstAmt, igstAmt, amount };
+  return { taxable, sgstAmt, cgstAmt, igstAmt, amount: roundHalfUp(amount) };
 }
 
 // Round-off is no longer a manual field the user types into -- the backend
@@ -40,10 +45,12 @@ export function computeTotals(items) {
   );
 
   const netTotal = totals.taxableAmount + totals.sgstTotal + totals.cgstTotal + totals.igstTotal;
-  const grandTotal = Math.round(netTotal);
-  const roundOff = grandTotal - netTotal;
+  const grandTotal = roundHalfUp(netTotal, 0);
+  const roundOff = roundHalfUp(grandTotal - netTotal);
 
-  return { ...totals, roundOff, grandTotal };
+  return { taxableAmount: roundHalfUp(totals.taxableAmount),
+    sgstTotal: roundHalfUp(totals.sgstTotal), cgstTotal: roundHalfUp(totals.cgstTotal),
+    igstTotal: roundHalfUp(totals.igstTotal), roundOff, grandTotal };
 }
 
 export function formatCurrency(value) {

@@ -16,3 +16,69 @@
   font-style: italic;
   line-height: 1.4;
 }
+
+.sales-entry__item-numbers {
+  grid-template-columns: repeat(8, minmax(110px, 1fr));
+}
+
+.sales-stock-box {
+  min-height: 46px;
+  margin-top: 24px;
+  border: 1px solid var(--border-color, #d7dee8);
+  border-radius: 8px;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 7px 12px;
+}
+
+.sales-stock-box span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.sales-stock-box strong {
+  color: #0f172a;
+  font-size: 16px;
+}
+
+@media (max-width: 1300px) {
+  .sales-entry__item-numbers {
+    grid-template-columns: repeat(4, minmax(130px, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .sales-entry__item-numbers {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* Keep Stock and Amount cards aligned inside Item Entry. */
+.sales-entry__item-numbers {
+  align-items: end;
+}
+
+.sales-entry__item-numbers .gt-live-amount {
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.sales-entry__item-numbers .gt-live-amount strong {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sales-stock-box {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}

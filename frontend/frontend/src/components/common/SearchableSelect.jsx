@@ -1,18 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import './SearchableSelect.css';
 
-/**
- * options: [{ value, label, meta? }]
- * value: currently selected value (matches option.value), or '' / null
- * onChange: (option | null) => void  -- receives the full option object, or a
- *           synthetic { value, label, isCustom: true } when allowCustom is used
- * allowCustom: lets the user commit free text that isn't in the options list
- *              (useful for Item Name, since your backend auto-creates new items)
- */
 export default function SearchableSelect({
   label,
   name,
-  options,
+  options = [],
   value,
   onChange,
   placeholder = 'Search...',
@@ -22,101 +14,128 @@ export default function SearchableSelect({
   allowCustom = false,
   emptyMessage = 'No matches found.',
 }) {
-  const selectedOption = options.find((o) => o.value === value) || null;
-
-  const [inputText, setInputText] = useState(selectedOption?.label || '');
+  const containerRef = useRef(null);
+  const [inputText, setInputText] = useState('');
   const [open, setOpen] = useState(false);
   const [highlighted, setHighlighted] = useState(0);
-  const [localOptions, setLocalOptions] = useState(options);
-  const containerRef = useRef(null);
+  const [customOptions, setCustomOptions] = useState([]);
 
-  // Keep the visible text in sync when the selection is changed externally
-  // (e.g. form reset, or editing an existing row).
-  useEffect(() => {
-    setInputText(selectedOption?.label || '');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
-
-  useEffect(() => {
-    setLocalOptions(options);
-  }, [options]);
-
-  useEffect(() => {
-    function handleClickOutside(e) {
-      if (containerRef.current && !containerRef.current.contains(e.target)) {
-        commitOrRevert();
-        setOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inputText, options]);
-
-  const filtered = localOptions.filter((o) =>
-    o.label.toLowerCase().includes(inputText.trim().toLowerCase())
+  const allOptions = useMemo(
+    () => [...options, ...customOptions],
+    [options, customOptions],
   );
 
-  function commitOrRevert() {
-    const exactMatch = options.find((o) => o.label.toLowerCase() === inputText.trim().toLowerCase());
-    if (exactMatch) {
-      onChange(exactMatch);
-      setInputText(exactMatch.label);
+  const selectedOption = useMemo(
+    () => allOptions.find((option) => String(option.value) === String(value)) || null,
+    [allOptions, value],
+  );
+
+  useEffect(() => {
+    setInputText(selectedOption?.label || '');
+  }, [selectedOption?.label]);
+
+  useEffect(() => {
+    const handleOutside = (event) => {
+      if (!containerRef.current?.contains(event.target)) {
+        setInputText(selectedOption?.label || '');
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [selectedOption?.label]);
+
+  const normalizedSearch = inputText.trim().toLowerCase();
+  const filtered = allOptions.filter((option) =>
+    String(option.label || '').toLowerCase().includes(normalizedSearch),
+  );
+
+  const selectOption = (option) => {
+    setInputText(option.label);
+    setOpen(false);
+    setHighlighted(0);
+
+    if (String(option.value) !== String(value)) {
+      onChange(option);
     }
-    else if (allowCustom && inputText.trim()) {
-        const newOption = {
-            value: inputText.trim(),
-            label: inputText.trim(),
-            isCustom: true
-        };
+  };
 
-        setLocalOptions(prev => [...prev, newOption]);
+  const commitCustom = () => {
+    const text = inputText.trim();
 
-        onChange(newOption);
+    if (!allowCustom || !text) return false;
 
-        setInputText(newOption.label);
-      }  
-    else if (!inputText.trim()) {
-      onChange(null);
+    const exact = allOptions.find(
+      (option) => String(option.label).toLowerCase() === text.toLowerCase(),
+    );
+
+    if (exact) {
+      selectOption(exact);
+      return true;
     }
-    else {
-      // No match, custom not allowed -> revert to last valid selection
-      setInputText(selectedOption?.label || '');
-    }
-  }
 
-  function selectOption(option) {
+    const option = {
+      value: text,
+      label: text,
+      isCustom: true,
+    };
+
+    setCustomOptions((previous) => [...previous, option]);
     onChange(option);
     setInputText(option.label);
     setOpen(false);
-  }
 
-  function handleKeyDown(e) {
-    if (!open && (e.key === 'ArrowDown' || e.key === 'Enter')) {
-      setOpen(true);
+    return true;
+  };
+
+  const handleKeyDown = (event) => {
+    if (event.key === 'Escape') {
+      setInputText(selectedOption?.label || '');
+      setOpen(false);
       return;
     }
+
+    if (!open && (event.key === 'ArrowDown' || event.key === 'Enter')) {
+      event.preventDefault();
+      setOpen(true);
+      setHighlighted(0);
+      return;
+    }
+
     if (!open) return;
 
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setHighlighted((h) => Math.min(h + 1, filtered.length - 1));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setHighlighted((h) => Math.max(h - 1, 0));
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      if (filtered[highlighted]) {
-        selectOption(filtered[highlighted]);
-      } else {
-        setOpen(false);
-        commitOrRevert();
-      }
-    } else if (e.key === 'Escape') {
-      setOpen(false);
-      commitOrRevert();
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setHighlighted((current) =>
+        Math.min(current + 1, Math.max(filtered.length - 1, 0)),
+      );
+      return;
     }
-  }
+
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setHighlighted((current) => Math.max(current - 1, 0));
+      return;
+    }
+
+    if (event.key === 'Enter') {
+      event.preventDefault();
+
+      const exact = allOptions.find(
+        (option) =>
+          String(option.label).toLowerCase() === inputText.trim().toLowerCase(),
+      );
+
+      if (exact) {
+        selectOption(exact);
+      } else if (allowCustom && inputText.trim()) {
+        commitCustom();
+      } else if (filtered[highlighted]) {
+        selectOption(filtered[highlighted]);
+      }
+    }
+  };
 
   return (
     <div className="form-field searchable-select" ref={containerRef}>
@@ -125,6 +144,7 @@ export default function SearchableSelect({
           {label} {required && <span className="form-field__required">*</span>}
         </label>
       )}
+
       <div className="searchable-select__control">
         <input
           id={name}
@@ -133,37 +153,65 @@ export default function SearchableSelect({
           value={inputText}
           placeholder={placeholder}
           disabled={disabled}
-          onFocus={() => { setOpen(true); setHighlighted(0); }}
-          onChange={(e) => { setInputText(e.target.value); setOpen(true); setHighlighted(0); }}
+          onFocus={() => {
+            setOpen(true);
+            setHighlighted(0);
+          }}
+          onChange={(event) => {
+            setInputText(event.target.value);
+            setOpen(true);
+            setHighlighted(0);
+          }}
           onKeyDown={handleKeyDown}
           autoComplete="off"
         />
-        <span
-      className="searchable-select__chevron" aria-hidden="true"onMouseDown={(e) => {e.preventDefault();setOpen((prev) => !prev);}}>▾</span>
+
+        <button
+          type="button"
+          className="searchable-select__chevron"
+          aria-label="Toggle options"
+          disabled={disabled}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => setOpen((current) => !current)}
+        >
+          ▾
+        </button>
 
         {open && !disabled && (
           <div className="searchable-select__menu">
-            {filtered.length === 0 && (
+            {!filtered.length && (
               <div className="searchable-select__empty">
                 {allowCustom && inputText.trim()
                   ? `Press Enter to use "${inputText.trim()}"`
                   : emptyMessage}
               </div>
             )}
-            {filtered.map((opt, idx) => (
-              <div
-                key={opt.value}
-                className={`searchable-select__option ${idx === highlighted ? 'searchable-select__option--highlighted' : ''} ${opt.value === value ? 'searchable-select__option--selected' : ''}`}
-                onMouseDown={() => selectOption(opt)}
-                onMouseEnter={() => setHighlighted(idx)}
+
+            {filtered.map((option, index) => (
+              <button
+                type="button"
+                key={`${option.value}-${index}`}
+                className={`searchable-select__option ${
+                  index === highlighted ? 'searchable-select__option--highlighted' : ''
+                } ${
+                  String(option.value) === String(value)
+                    ? 'searchable-select__option--selected'
+                    : ''
+                }`}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => selectOption(option)}
+                onMouseEnter={() => setHighlighted(index)}
               >
-                <span>{opt.label}</span>
-                {opt.meta && <span className="searchable-select__option-meta">{opt.meta}</span>}
-              </div>
+                <span>{option.label}</span>
+                {option.meta && (
+                  <span className="searchable-select__option-meta">{option.meta}</span>
+                )}
+              </button>
             ))}
           </div>
         )}
       </div>
+
       {error && <span className="form-field__error">{error}</span>}
     </div>
   );

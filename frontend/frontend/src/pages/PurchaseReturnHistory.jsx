@@ -1,21 +1,30 @@
-import { useCallback, useEffect, useState } from 'react';
+import PdfDownloadActions from '../components/common/PdfDownloadActions';
+import Pagination from '../components/common/Pagination';
+import useHistoryPage from '../hooks/useHistoryPage';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+
 import PageHeader from '../components/common/PageHeader';
 import DataTable from '../components/common/DataTable';
 import PurchaseReturnDetailModal from './PurchaseReturnDetailModal';
+
 import { useToast } from '../context/ToastContext';
 import {
+  deletePurchaseReturn,
   fetchPurchaseReturnById,
   fetchPurchaseReturns,
 } from '../services/purchaseReturnService';
 import { extractErrorMessage } from '../services/api';
 import { formatCurrency } from '../utils/calculations';
+
 import './PurchaseHistory.css';
 
 function compact(values = []) {
   const safe = values.filter(Boolean);
+
   if (!safe.length) return '—';
   if (safe.length === 1) return safe[0];
+
   return `${safe[0]} (+${safe.length - 1} more)`;
 }
 
@@ -23,46 +32,66 @@ export default function PurchaseReturnHistory() {
   const toast = useToast();
   const navigate = useNavigate();
 
-  const [records, setRecords] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailData, setDetailData] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
-  const loadRecords = useCallback((searchTerm) => {
-    setLoading(true);
+  const { items: records, loading, reload: loadRecords, pagination } = useHistoryPage(fetchPurchaseReturns, { search });
 
-    fetchPurchaseReturns({ search: searchTerm })
-      .then(setRecords)
-      .catch((error) => toast.error(extractErrorMessage(error)))
-      .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    loadRecords('');
-  }, [loadRecords]);
-
-  useEffect(() => {
-    const timer = setTimeout(() => loadRecords(search), 350);
-    return () => clearTimeout(timer);
-  }, [search, loadRecords]);
-
-  const openDetail = (row) => {
+  async function openDetail(row) {
     setDetailOpen(true);
     setDetailLoading(true);
 
-    fetchPurchaseReturnById(row.id)
-      .then(setDetailData)
-      .catch((error) => {
-        toast.error(extractErrorMessage(error));
+    try {
+      const detail = await fetchPurchaseReturnById(row.id);
+      setDetailData(detail);
+    } catch (error) {
+      toast.error(extractErrorMessage(error));
+      setDetailOpen(false);
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  function handleEdit(row) {
+    navigate(`/purchase-return-entry?edit=${row.id}`);
+  }
+
+  async function handleDelete(row) {
+    const confirmed = window.confirm(
+      `Delete purchase return ${row.return_no || row.id}?`,
+    );
+
+    if (!confirmed) return;
+
+    setDeletingId(row.id);
+
+    try {
+      await deletePurchaseReturn(row.id);
+
+      if (detailData?.id === row.id) {
         setDetailOpen(false);
-      })
-      .finally(() => setDetailLoading(false));
-  };
+        setDetailData(null);
+      }
+
+      toast.success(
+        `Purchase return ${row.return_no || row.id} deleted successfully.`,
+      );
+
+      await loadRecords();
+    } catch (error) {
+      toast.error(extractErrorMessage(error));
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   const columns = [
+    { key: 'pdf', label: 'Download PDF', render: (row) => (
+      <PdfDownloadActions type="purchaseReturn" loadDetail={() => fetchPurchaseReturnById(row.id)} />
+    ) },
     {
       key: 'return_no',
       label: 'Return No.',
@@ -126,7 +155,7 @@ export default function PurchaseReturnHistory() {
     <div className="page">
       <PageHeader
         title="Purchase Return History"
-        subtitle="View and update supplier returns. Delete is disabled to protect stock history."
+        subtitle="View, update, or delete supplier returns."
         searchValue={search}
         onSearchChange={setSearch}
         searchPlaceholder="Search return no., original bill, or supplier..."
@@ -135,21 +164,26 @@ export default function PurchaseReturnHistory() {
       <DataTable
         columns={columns}
         rows={records}
-        loading={loading}
+        loading={loading || deletingId !== null}
         onRowClick={openDetail}
-        onEdit={(row) => navigate(`/purchase-return-entry?edit=${row.id}`)}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
         emptyMessage={
           search
             ? `No purchase returns match "${search}".`
             : 'No purchase returns recorded yet.'
         }
       />
+      <Pagination {...pagination} />
 
       <PurchaseReturnDetailModal
         open={detailOpen}
         loading={detailLoading}
         purchaseReturn={detailData}
-        onClose={() => setDetailOpen(false)}
+        onClose={() => {
+          setDetailOpen(false);
+          setDetailData(null);
+        }}
       />
     </div>
   );

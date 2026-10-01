@@ -1,6 +1,10 @@
 import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
-import { formatCurrency } from '../utils/calculations';
+import {
+  formatCurrency,
+  formatSignedCurrency,
+} from '../utils/calculations';
+
 import './PurchaseDetailModal.css';
 
 export default function SalesReturnDetailModal({
@@ -37,25 +41,44 @@ export default function SalesReturnDetailModal({
         <div className="purchase-detail">
           <div className="purchase-detail__meta">
             <div>
-              <span className="purchase-detail__meta-label">Customer</span>
+              <span className="purchase-detail__meta-label">
+                Customer
+              </span>
               <span className="purchase-detail__meta-value">
                 {salesReturn.customer_name || '—'}
               </span>
             </div>
+
             <div>
-              <span className="purchase-detail__meta-label">Return Date</span>
+              <span className="purchase-detail__meta-label">
+                Return Date
+              </span>
               <span className="purchase-detail__meta-value">
-                {new Date(salesReturn.return_date).toLocaleDateString('en-IN')}
+                {salesReturn.return_date
+                  ? new Date(
+                      salesReturn.return_date,
+                    ).toLocaleDateString('en-IN', {
+                      day: '2-digit',
+                      month: 'short',
+                      year: 'numeric',
+                    })
+                  : '—'}
               </span>
             </div>
+
             <div>
-              <span className="purchase-detail__meta-label">Original Invoice</span>
+              <span className="purchase-detail__meta-label">
+                Original Invoice
+              </span>
               <span className="purchase-detail__meta-value">
                 {salesReturn.original_invoice_no || '—'}
               </span>
             </div>
+
             <div>
-              <span className="purchase-detail__meta-label">Return Reason</span>
+              <span className="purchase-detail__meta-label">
+                Return Reason
+              </span>
               <span className="purchase-detail__meta-value">
                 {salesReturn.return_reason || '—'}
               </span>
@@ -74,6 +97,7 @@ export default function SalesReturnDetailModal({
                   <th className="align-right">Amount</th>
                 </tr>
               </thead>
+
               <tbody>
                 {!items.length && (
                   <tr>
@@ -82,17 +106,18 @@ export default function SalesReturnDetailModal({
                     </td>
                   </tr>
                 )}
+
                 {items.map((item) => (
-                  <tr key={item.id}>
+                  <tr key={item.id ?? item.sales_return_item_id}>
                     <td>{item.item_name}</td>
                     <td>{item.hsn_code || '—'}</td>
                     <td className="align-right">{item.quantity}</td>
-                    <td>{item.unit}</td>
+                    <td>{item.unit || '—'}</td>
                     <td className="align-right">
-                      {formatCurrency(item.price)}
+                      {formatCurrency(item.price || 0)}
                     </td>
                     <td className="align-right">
-                      {formatCurrency(item.amount)}
+                      {formatCurrency(item.amount || 0)}
                     </td>
                   </tr>
                 ))}
@@ -103,25 +128,41 @@ export default function SalesReturnDetailModal({
           <div className="purchase-detail__summary">
             <div className="purchase-detail__summary-row">
               <span>Taxable Amount</span>
-              <span>{formatCurrency(salesReturn.taxable_amount)}</span>
+              <span>{formatCurrency(salesReturn.taxable_amount || 0)}</span>
             </div>
+
             <div className="purchase-detail__summary-row">
-              <span>SGST</span>
-              <span>{formatCurrency(salesReturn.sgst_total)}</span>
+              <span>SGST Total</span>
+              <span>{formatCurrency(salesReturn.sgst_total || 0)}</span>
             </div>
+
             <div className="purchase-detail__summary-row">
-              <span>CGST</span>
-              <span>{formatCurrency(salesReturn.cgst_total)}</span>
+              <span>CGST Total</span>
+              <span>{formatCurrency(salesReturn.cgst_total || 0)}</span>
             </div>
+
             <div className="purchase-detail__summary-row">
-              <span>IGST</span>
-              <span>{formatCurrency(salesReturn.igst_total)}</span>
+              <span>IGST Total</span>
+              <span>{formatCurrency(salesReturn.igst_total || 0)}</span>
             </div>
+
+            <div className="purchase-detail__summary-row purchase-detail__summary-row--muted">
+              <span>Round Off</span>
+              <span>{formatSignedCurrency(salesReturn.round_off || 0)}</span>
+            </div>
+
             <div className="purchase-detail__grand">
               <span>Grand Total</span>
-              <span>{formatCurrency(salesReturn.grand_total)}</span>
+              <span>{formatCurrency(salesReturn.grand_total || 0)}</span>
             </div>
           </div>
+
+          {salesReturn.remarks && (
+            <div className="purchase-detail__summary-row">
+              <span>Remarks</span>
+              <span>{salesReturn.remarks}</span>
+            </div>
+          )}
         </div>
       )}
     </Modal>

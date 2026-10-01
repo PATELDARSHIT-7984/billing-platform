@@ -1,14 +1,24 @@
-import { useCallback, useEffect, useState } from 'react';
+import PdfDownloadActions from '../components/common/PdfDownloadActions';
+import Pagination from '../components/common/Pagination';
+import useHistoryPage from '../hooks/useHistoryPage';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+
 import PageHeader from '../components/common/PageHeader';
 import DataTable from '../components/common/DataTable';
 import BillDetailModal from './BillDetailModal';
+
 import { useToast } from '../context/ToastContext';
-import { useCompany } from '../context/CompanyContext';
-import { fetchBills, fetchBillById } from '../services/billService';
+
+import {
+  deleteBill,
+  fetchBillById,
+  fetchBills,
+} from '../services/billService';
 import { extractErrorMessage } from '../services/api';
+
 import { formatCurrency } from '../utils/calculations';
-import { downloadInvoicePDF } from '../utils/pdfGenerator';
+
 import './PurchaseHistory.css';
 
 function compactValues(values = [], fallback = '—') {
@@ -16,8 +26,13 @@ function compactValues(values = [], fallback = '—') {
     (value) => value !== null && value !== undefined && value !== '',
   );
 
-  if (!cleaned.length) return fallback;
-  if (cleaned.length === 1) return String(cleaned[0]);
+  if (!cleaned.length) {
+    return fallback;
+  }
+
+  if (cleaned.length === 1) {
+    return String(cleaned[0]);
+  }
 
   return `${cleaned[0]} (+${cleaned.length - 1} more)`;
 }
@@ -25,66 +40,70 @@ function compactValues(values = [], fallback = '—') {
 export default function SalesHistory() {
   const toast = useToast();
   const navigate = useNavigate();
-  const { company } = useCompany();
 
-  const [bills, setBills] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailData, setDetailData] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [downloadingId, setDownloadingId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
-  const loadBills = useCallback((searchTerm) => {
-    setLoading(true);
+  const { items: bills, loading, reload: loadBills, pagination } = useHistoryPage(fetchBills, { search });
 
-    fetchBills({ search: searchTerm })
-      .then(setBills)
-      .catch((error) => toast.error(extractErrorMessage(error)))
-      .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    loadBills('');
-  }, [loadBills]);
-
-  useEffect(() => {
-    const timer = setTimeout(() => loadBills(search), 350);
-    return () => clearTimeout(timer);
-  }, [search, loadBills]);
-
-  const openDetail = (row) => {
+  async function openDetail(row) {
     const id = row.bill_id ?? row.id;
 
     setDetailLoading(true);
     setDetailOpen(true);
 
-    fetchBillById(id)
-      .then(setDetailData)
-      .catch((error) => {
-        toast.error(extractErrorMessage(error));
-        setDetailOpen(false);
-      })
-      .finally(() => setDetailLoading(false));
-  };
+    try {
+      const detail = await fetchBillById(id);
+      setDetailData(detail);
+    } catch (error) {
+      toast.error(extractErrorMessage(error));
+      setDetailOpen(false);
+    } finally {
+      setDetailLoading(false);
+    }
+  }
 
-  const handleDownload = (row, event) => {
-    event.stopPropagation();
-    const id = row.bill_id ?? row.id;
-
-    setDownloadingId(id);
-
-    fetchBillById(id)
-      .then((detail) => downloadInvoicePDF(detail, company))
-      .catch((error) => toast.error(extractErrorMessage(error)))
-      .finally(() => setDownloadingId(null));
-  };
-
-  const handleEdit = (row) => {
+  function handleEdit(row) {
     const id = row.bill_id ?? row.id;
     navigate(`/sales-entry?edit=${id}`);
-  };
+  }
+
+  async function handleDelete(row) {
+    const id = row.bill_id ?? row.id;
+    const invoiceNo = row.invoice_no || id;
+
+    const confirmed = window.confirm(
+      `Delete sales invoice ${invoiceNo}?`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingId(id);
+
+    try {
+      await deleteBill(id);
+
+      if (detailData?.bill?.id === id || detailData?.bill?.bill_id === id) {
+        setDetailOpen(false);
+        setDetailData(null);
+      }
+
+      toast.success(
+        `Sales invoice ${invoiceNo} deleted successfully.`,
+      );
+
+      await loadBills();
+    } catch (error) {
+      toast.error(extractErrorMessage(error));
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   const columns = [
     {
@@ -101,18 +120,25 @@ export default function SalesHistory() {
       label: 'Bill Date',
       render: (row) => (
         row.bill_date
-          ? new Date(row.bill_date).toLocaleDateString('en-IN', {
-              day: '2-digit',
-              month: 'short',
-              year: 'numeric',
-            })
+          ? new Date(row.bill_date).toLocaleDateString(
+              'en-IN',
+              {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric',
+              },
+            )
           : '—'
       ),
     },
     {
       key: 'customer_name',
       label: 'Customer',
-      render: (row) => row.customer_name || row.party_name || '—',
+      render: (row) => (
+        row.customer_name
+        || row.party_name
+        || '—'
+      ),
     },
     {
       key: 'item_name',
@@ -136,35 +162,25 @@ export default function SalesHistory() {
       key: 'total_boxes',
       label: 'Total Boxes',
       align: 'right',
-      render: (row) => row.total_boxes ?? row.item_count ?? 0,
+      render: (row) => (
+        row.total_boxes
+        ?? row.item_count
+        ?? 0
+      ),
     },
     {
       key: 'grand_total',
       label: 'Grand Total',
       align: 'right',
-      render: (row) => <strong>{formatCurrency(row.grand_total || 0)}</strong>,
+      render: (row) => (
+        <strong>
+          {formatCurrency(row.grand_total || 0)}
+        </strong>
+      ),
     },
-    {
-      key: 'invoice',
-      label: 'Invoice',
-      width: 80,
-      render: (row) => {
-        const id = row.bill_id ?? row.id;
-
-        return (
-          <button
-            type="button"
-            className="data-table__action-btn"
-            onClick={(event) => handleDownload(row, event)}
-            disabled={downloadingId === id}
-            title="Download invoice"
-            aria-label="Download invoice"
-          >
-            {downloadingId === id ? '...' : '⬇'}
-          </button>
-        );
-      },
-    },
+    { key: 'pdf', label: 'Download PDF', render: (row) => (
+      <PdfDownloadActions type="sale" loadDetail={() => fetchBillById(row.bill_id ?? row.id)} />
+    ) },
   ];
 
   const rows = bills.map((row) => ({
@@ -176,7 +192,7 @@ export default function SalesHistory() {
     <div className="page">
       <PageHeader
         title="Sales History"
-        subtitle="View every sales invoice, open its details, or update it."
+        subtitle="View, update, download, or delete sales invoices."
         searchValue={search}
         onSearchChange={setSearch}
         searchPlaceholder="Search by invoice number or customer..."
@@ -185,21 +201,26 @@ export default function SalesHistory() {
       <DataTable
         columns={columns}
         rows={rows}
-        loading={loading}
+        loading={loading || deletingId !== null}
         onRowClick={openDetail}
         onEdit={handleEdit}
+        onDelete={handleDelete}
         emptyMessage={
           search
             ? `No sales match "${search}".`
             : 'No sales recorded yet. Create one from Sales Entry.'
         }
       />
+      <Pagination {...pagination} />
 
       <BillDetailModal
         open={detailOpen}
         loading={detailLoading}
         billDetail={detailData}
-        onClose={() => setDetailOpen(false)}
+        onClose={() => {
+          setDetailOpen(false);
+          setDetailData(null);
+        }}
       />
     </div>
   );

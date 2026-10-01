@@ -86,6 +86,13 @@ export const ReportsIcon = () => (
   </svg>
 );
 
+export const RojmelIcon = () => (
+  <svg {...common}>
+    <path d="M4 2.5h10v13H4z" />
+    <path d="M6.5 6h5M6.5 9h5M6.5 12h3" />
+  </svg>
+);
+
 export const ChevronLeftIcon = () => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
     <path d="M10 3 5 8l5 5" />

@@ -1,0 +1,16 @@
+[
+  {"name":"below half rupee","items":[{"price":100.49}],"totals":[100.49,0,0,0,-0.49,100],"amounts":[100.49]},
+  {"name":"half rupee","items":[{"price":100.50}],"totals":[100.5,0,0,0,0.5,101],"amounts":[100.5]},
+  {"name":"above half rupee","items":[{"price":100.51}],"totals":[100.51,0,0,0,0.49,101],"amounts":[100.51]},
+  {"name":"negative round off","items":[{"price":100.42}],"totals":[100.42,0,0,0,-0.42,100],"amounts":[100.42]},
+  {"name":"positive round off","items":[{"price":100.60}],"totals":[100.6,0,0,0,0.4,101],"amounts":[100.6]},
+  {"name":"discount and split GST","items":[{"price":99,"disc_percent":5,"cgst":9,"sgst":9}],"totals":[94.05,8.46,8.46,0,0.02,111],"amounts":[110.98]},
+  {"name":"discount and IGST","items":[{"price":99,"disc_percent":5,"igst":18}],"totals":[94.05,0,0,16.93,0.02,111],"amounts":[110.98]},
+  {"name":"fractional paise accumulation","items":[{"price":0.335},{"price":0.335},{"price":0.335}],"totals":[1.01,0,0,0,-0.01,1],"amounts":[0.34,0.34,0.34]},
+  {"name":"half paise","items":[{"price":2.675}],"totals":[2.68,0,0,0,0.33,3],"amounts":[2.68]},
+  {"name":"half paise GST","items":[{"price":0.5,"cgst":1,"sgst":1}],"totals":[0.5,0.01,0.01,0,0.49,1],"amounts":[0.51]},
+  {"name":"fractional quantity","items":[{"price":67,"quantity":1.5}],"totals":[100.5,0,0,0,0.5,101],"amounts":[100.5]},
+  {"name":"full discount","items":[{"price":99,"disc_percent":100,"igst":18}],"totals":[0,0,0,0,0,0],"amounts":[0]},
+  {"name":"GST disabled","is_gst":false,"items":[{"price":100.5,"cgst":9,"sgst":9}],"totals":[100.5,0,0,0,0.5,101],"amounts":[100.5]},
+  {"name":"empty preview","items":[],"totals":[0,0,0,0,0,0],"amounts":[]}
+]

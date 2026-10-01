@@ -1,428 +1,682 @@
-import { useEffect, useMemo, useState } from 'react';
+import DoneBySelect from '../components/common/DoneBySelect';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import Card from '../components/common/Card';
 import Button from '../components/common/Button';
-import ConfirmDialog from '../components/common/ConfirmDialog';
 import SearchableSelect from '../components/common/SearchableSelect';
-import { FormInput, FormTextarea, FormCheckbox } from '../components/common/FormField';
-import SalesItemEntryForm from '../components/sales/SalesItemEntryForm';
-import SalesItemsTable from '../components/sales/SalesItemsTable';
-import BillSummaryCard from '../components/sales/BillSummaryCard';
+import {
+  FormCheckbox,
+  FormInput,
+  FormSelect,
+  FormTextarea,
+} from '../components/common/FormField';
 import { useToast } from '../context/ToastContext';
-import { useCompany } from '../context/CompanyContext';
 import { fetchCustomers, fetchCustomerById } from '../services/customerService';
 import { fetchItems } from '../services/itemService';
-import { createBill, fetchBillById } from '../services/billService';
+import {
+  createBill,
+  fetchBillById,
+  updateBill,
+} from '../services/billService';
 import { extractErrorMessage } from '../services/api';
-import { computeBillTotals } from '../utils/billCalculations';
-import { generateInvoicePDF } from '../utils/pdfGenerator';
+import { UNIT_OPTIONS } from '../config/units';
+import { formatCurrency } from '../utils/calculations';
+import { computeLineAmounts, computeTotals, salesLineFromSnapshot } from '../utils/salesCalculations';
 import '../styles/PurchaseEntry.css';
 import '../styles/SalesEntry.css';
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-const EMPTY_DETAILS = {
-  customer_id: null,
-  bill_date: today(),
-  is_interstate: false,
-  remarks: '',
-};
+const STATES = [
+  '',
+  'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
+  'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka',
+  'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram',
+  'Nagaland', 'Odisha', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu',
+  'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal',
+  'Andaman and Nicobar Islands', 'Chandigarh',
+  'Dadra and Nagar Haveli and Daman and Diu', 'Delhi', 'Jammu and Kashmir',
+  'Ladakh', 'Lakshadweep', 'Puducherry',
+];
 
-const EMPTY_CUSTOMER_DETAILS = {
-  mobile: '',
+const STATE_OPTIONS = STATES.map((value) => ({
+  value,
+  label: value || 'Select State',
+}));
+
+
+const createEmptyDetails = () => ({
+  customer_id: null,
+  invoice_no: '',
+  order_no: '',
+  bill_date: today(),
+  due_term: '',
+  due_date: '',
+  is_gst: true,
   address: '',
   city: '',
-  state: '',
-  pincode: '',
-  gstin: '',
-  pan_card: '',
+  customer_state: '',
+  contact_no: '',
   email: '',
-};
+  done_by: '',
+  brokerage: 0,
+  broker_remarks: '',
+  delivery_date: '',
+  ship_to: '',
+  ship_to_address: '',
+  ship_state: '',
+  transport: '',
+  reference: '',
+  remarks: '',
+  show_shipping_address_on_bill: false,
+});
 
-const EMPTY_ITEM_FORM = {
+const createEmptyItem = () => ({
   item_id: null,
   item_name: '',
   hsn_code: '',
-  unit: '',
-  gst_rate: 0,
-  current_stock: 0,
   quantity: '',
-  rate: '',
-};
+  unit: UNIT_OPTIONS[0]?.value || 'Box',
+  price: '',
+  current_stock: '',
+  disc_percent: 0,
+  sgst: 0,
+  cgst: 0,
+  igst: 0,
+});
 
-let rowIdCounter = 0;
+const getCustomerId = (customer) => customer?.id ?? customer?.customer_id ?? null;
+const getItemId = (item) => item?.id ?? item?.item_id ?? null;
+
+let rowCounter = 0;
+
+function addDays(dateString, daysValue) {
+  if (!dateString || daysValue === '' || Number(daysValue) < 0) return '';
+  const date = new Date(`${dateString}T00:00:00`);
+  date.setDate(date.getDate() + Number(daysValue));
+  return date.toISOString().slice(0, 10);
+}
 
 export default function SalesEntry() {
   const toast = useToast();
-  const { company } = useCompany();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const editId = searchParams.get('edit');
+  const loadedEditId = useRef(null);
 
-  const [customerOptions, setCustomerOptions] = useState([]);
-  const [itemOptions, setItemOptions] = useState([]);
-
-  const [details, setDetails] = useState(EMPTY_DETAILS);
+  const [customers, setCustomers] = useState([]);
+  const [itemRecords, setItemRecords] = useState([]);
+  const [details, setDetails] = useState(createEmptyDetails);
+  const [itemForm, setItemForm] = useState(createEmptyItem);
+  const [items, setItems] = useState([]);
   const [detailErrors, setDetailErrors] = useState({});
-  const [customerDetails, setCustomerDetails] = useState(EMPTY_CUSTOMER_DETAILS);
-  const [customerLoading, setCustomerLoading] = useState(false);
-
-  const [itemForm, setItemForm] = useState(EMPTY_ITEM_FORM);
   const [itemErrors, setItemErrors] = useState({});
   const [editingIndex, setEditingIndex] = useState(null);
-
-  const [items, setItems] = useState([]);
-
   const [saving, setSaving] = useState(false);
-  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [loadingSale, setLoadingSale] = useState(false);
 
-  const [savedBillDetail, setSavedBillDetail] = useState(null);
+  const loadCustomers = () => fetchCustomers({ search: '' })
+    .then((data) => setCustomers(data.filter((customer) => customer.is_active !== false)))
+    .catch((error) => toast.error(extractErrorMessage(error)));
 
-  // Load Customers for the searchable dropdown.
+  const loadItems = () => fetchItems({ search: '' })
+    .then((data) => setItemRecords(data.filter((item) => item.is_active !== false)))
+    .catch((error) => toast.error(extractErrorMessage(error)));
+
   useEffect(() => {
-    fetchCustomers({ search: '' })
-      .then((data) => {
-        const mapped = data
-          .filter((c) => c.is_active)
-          .map((c) => ({ value: c.id, label: c.customer_name, meta: c.mobile || c.city || undefined }));
-        setCustomerOptions(mapped);
-      })
-      .catch((err) => toast.error(extractErrorMessage(err)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    loadCustomers();
+    loadItems();
   }, []);
 
-  // Load Item Master list for the item dropdown. `value` is the item id
-  // (a real FK, unlike Purchase Entry's item_name) because /bill's payload
-  // requires item_id, and there is no "type a new item" mode here -- every
-  // line must reference an existing Item Master record.
+
+
+
   useEffect(() => {
-    fetchItems({ search: '' })
-      .then((data) => {
-        const mapped = data.map((i) => ({
-          value: i.id,
-          label: i.name,
-          hsn_code: i.hsn_code,
-          unit: i.unit,
-          gst_rate: i.gst_rate,
-          sale_price: i.sale_price,
-          current_stock: i.current_stock,
-          meta: `Stock: ${i.current_stock}`,
-        }));
-        setItemOptions(mapped);
-      })
-      .catch((err) => toast.error(extractErrorMessage(err)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const totals = useMemo(() => computeBillTotals(items, details.is_interstate), [items, details.is_interstate]);
-
-  // ---------- Section 1 handlers ----------
-  const handleDetailChange = (field) => (value) => {
-    setDetails((prev) => ({ ...prev, [field]: value }));
-    if (detailErrors[field]) setDetailErrors((prev) => ({ ...prev, [field]: '' }));
-  };
-
-  const handleCustomerSelect = (option) => {
-    setDetails((prev) => ({ ...prev, customer_id: option ? option.value : null }));
-    if (detailErrors.customer_id) setDetailErrors((prev) => ({ ...prev, customer_id: '' }));
-
-    if (!option) {
-      setCustomerDetails(EMPTY_CUSTOMER_DETAILS);
+    if (
+      !editId
+      || !customers.length
+      || !itemRecords.length
+      || loadedEditId.current === editId
+    ) {
       return;
     }
 
-    // The list endpoint doesn't carry address/email/pincode/pan_card, so
-    // fetch the full record for the auto-fill panel.
-    setCustomerLoading(true);
-    fetchCustomerById(option.value)
-      .then((full) => {
-        setCustomerDetails({
-          mobile: full.mobile || '',
-          address: full.address || '',
-          city: full.city || '',
-          state: full.state || '',
-          pincode: full.pincode || '',
-          gstin: full.gstin || '',
-          pan_card: full.pan_card || '',
-          email: full.email || '',
+    async function loadSale() {
+      loadedEditId.current = editId;
+      setLoadingSale(true);
+
+      try {
+        const detail = await fetchBillById(editId);
+        const sale = detail.bill;
+        const saleItems = detail.items || [];
+
+        const customer = customers.find(
+          (row) => Number(getCustomerId(row)) === Number(sale.customer_id),
+        );
+
+        setDetails({
+          _savedInvoice: { ...sale, lineIds: saleItems.map((row) => row.bill_item_id) },
+          customer_id: sale.customer_id ?? null,
+          invoice_no: sale.invoice_no || '',
+          order_no: sale.order_no || '',
+          bill_date: sale.bill_date || today(),
+          due_term: sale.due_term ?? '',
+          due_date: sale.due_date || '',
+          is_gst: saleItems.some((row) => Number(row.gst_percent) > 0),
+          address: sale.address || customer?.address || '',
+          city: sale.city || customer?.city || '',
+          customer_state: sale.customer_state || sale.state || customer?.state || '',
+          contact_no: sale.contact_no || customer?.mobile || '',
+          email: sale.email || customer?.email || '',
+          done_by: sale.done_by || '',
+          _savedDoneBy: sale.done_by || '',
+          brokerage: sale.brokerage ?? 0,
+          broker_remarks: sale.broker_remarks || '',
+          delivery_date: sale.delivery_date || '',
+          ship_to: sale.ship_to || '',
+          ship_to_address: sale.ship_to_address || '',
+          ship_state: sale.shipping_state || '',
+          transport: sale.transport || '',
+          reference: sale.reference || '',
+          remarks: sale.remarks || '',
+          show_shipping_address_on_bill: Boolean(
+            sale.show_shipping_address_on_bill,
+          ),
         });
-      })
-      .catch((err) => {
-        toast.error(extractErrorMessage(err));
-        setCustomerDetails(EMPTY_CUSTOMER_DETAILS);
-      })
-      .finally(() => setCustomerLoading(false));
-  };
 
-  function validateDetails() {
-    const errors = {};
-    if (!details.customer_id) errors.customer_id = 'Customer is required.';
-    if (!details.bill_date) errors.bill_date = 'Bill date is required.';
-    return errors;
-  }
+        setItems(
+          saleItems.map((row) => {
+            const master = itemRecords.find(
+              (item) => Number(getItemId(item)) === Number(row.item_id),
+            );
 
-  // ---------- Section 2 handlers ----------
-  const handleItemFieldChange = (field, value) => {
-    setItemForm((prev) => ({ ...prev, [field]: value }));
-    if (itemErrors[field]) setItemErrors((prev) => ({ ...prev, [field]: '' }));
-  };
-
-  const handleItemSelect = (option) => {
-    if (!option) {
-      setItemForm(EMPTY_ITEM_FORM);
-      return;
-    }
-    setItemForm((prev) => ({
-      ...prev,
-      item_id: option.value,
-      item_name: option.label,
-      hsn_code: option.hsn_code || '',
-      unit: option.unit || '',
-      gst_rate: option.gst_rate ?? 0,
-      current_stock: option.current_stock ?? 0,
-      rate: option.sale_price ?? prev.rate,
-    }));
-    if (itemErrors.item_id) setItemErrors((prev) => ({ ...prev, item_id: '' }));
-  };
-
-  function validateItemForm() {
-    const errors = {};
-    if (!itemForm.item_id) errors.item_id = 'Select an item.';
-    if (!itemForm.quantity || Number(itemForm.quantity) <= 0) errors.quantity = 'Enter a valid quantity.';
-    if (itemForm.rate === '' || Number(itemForm.rate) < 0) errors.rate = 'Enter a valid price.';
-
-    if (!errors.quantity) {
-      // Sum quantity already added for this item (excluding the row being
-      // edited) so re-adding the same item twice still respects stock.
-      const alreadyAdded = items.reduce(
-        (sum, row, idx) => (row.item_id === itemForm.item_id && idx !== editingIndex ? sum + Number(row.quantity) : sum),
-        0
-      );
-      if (Number(itemForm.quantity) + alreadyAdded > Number(itemForm.current_stock)) {
-        errors.quantity = `Only ${itemForm.current_stock} in stock (${alreadyAdded > 0 ? `${alreadyAdded} already added` : 'requested exceeds stock'}).`;
+            return {
+              _rowId: ++rowCounter,
+              item_id: row.item_id,
+              item_name: row.item_name || master?.name || '',
+              hsn_code: row.hsn_code || master?.hsn_code || '',
+              quantity: row.quantity ?? '',
+              unit: row.unit || master?.unit || UNIT_OPTIONS[0]?.value || 'Box',
+              ...salesLineFromSnapshot(row),
+              current_stock: master?.current_stock ?? 0,
+            };
+          }),
+        );
+      } catch (error) {
+        toast.error(extractErrorMessage(error));
+        navigate('/sales-history');
+      } finally {
+        setLoadingSale(false);
       }
     }
 
-    return errors;
-  }
+    loadSale();
+  }, [editId, customers, itemRecords, navigate, toast]);
 
-  const handleAddItem = () => {
-    const errors = validateItemForm();
-    if (Object.keys(errors).length > 0) {
+  const customerOptions = useMemo(
+    () => customers.map((customer) => ({
+      value: getCustomerId(customer),
+      label: customer.customer_name || customer.name || 'Unnamed Customer',
+      meta: customer.city || customer.mobile || '',
+      record: customer,
+    })),
+    [customers],
+  );
+
+  const itemOptions = useMemo(
+    () => itemRecords.map((item) => ({
+      value: getItemId(item),
+      label: item.name,
+      meta: item.hsn_code ? `HSN ${item.hsn_code}` : 'HSN not set',
+      record: item,
+    })),
+    [itemRecords],
+  );
+
+  const totals = useMemo(() => computeTotals(items, details.is_gst, details._savedInvoice), [items, details.is_gst, details._savedInvoice]);
+  const liveAmount = useMemo(() => computeLineAmounts(itemForm, details.is_gst).amount, [itemForm, details.is_gst]);
+
+  const changeDetail = (field, value) => {
+    if (field === 'is_gst' && !value) {
+      setItemForm((previous) => ({ ...previous, sgst: 0, cgst: 0, igst: 0 }));
+      setItems((previous) => previous.map((item) => ({ ...item, sgst: 0, cgst: 0, igst: 0 })));
+    }
+
+    setDetails((previous) => {
+      const next = { ...previous, [field]: value };
+      if (field === 'bill_date' || field === 'due_term') {
+        next.due_date = addDays(
+          field === 'bill_date' ? value : previous.bill_date,
+          field === 'due_term' ? value : previous.due_term,
+        );
+      }
+      return next;
+    });
+
+    setDetailErrors((previous) => ({ ...previous, [field]: '' }));
+  };
+
+  const applySelectedCustomer = (customer) => {
+    setDetails((previous) => ({
+      ...previous,
+      customer_id: getCustomerId(customer),
+      address: customer?.address || '',
+      city: customer?.city || '',
+      customer_state: customer?.state || '',
+      contact_no: customer?.mobile || '',
+      email: customer?.email || '',
+      delivery_date: '',
+      ship_to: '',
+      ship_to_address: '',
+      ship_state: '',
+      transport: '',
+      reference: '',
+      remarks: '',
+      show_shipping_address_on_bill: false,
+    }));
+
+    setItems([]);
+    setItemForm(createEmptyItem());
+    setEditingIndex(null);
+    setItemErrors({});
+  };
+
+  const selectCustomer = (option) => {
+    const nextId = option?.value ?? null;
+    const currentId = details.customer_id ?? null;
+
+    if (String(nextId ?? '') === String(currentId ?? '')) return;
+
+    if (nextId == null || nextId === '') {
+      applySelectedCustomer(null);
+      return;
+    }
+
+    fetchCustomerById(nextId)
+      .then((customer) => {
+        applySelectedCustomer(customer);
+        toast.success('Customer changed. Items and delivery details were cleared.');
+      })
+      .catch((error) => toast.error(extractErrorMessage(error)));
+  };
+
+  const selectItem = (option) => {
+    if (!option) {
+      setItemForm(createEmptyItem());
+      return;
+    }
+
+    const item = option.record;
+    setItemForm((previous) => ({
+      ...previous,
+      bill_item_id: undefined,
+      _savedLine: undefined,
+      item_id: getItemId(item),
+      item_name: item.name,
+      hsn_code: item.hsn_code || '',
+      unit: item.unit || previous.unit,
+      price: item.sale_price ?? previous.price,
+      current_stock: item.current_stock ?? 0,
+      cgst: details.is_gst ? item.cgst ?? 0 : 0,
+      sgst: details.is_gst ? item.sgst ?? 0 : 0,
+      igst: 0,
+    }));
+
+    setItemErrors({});
+  };
+
+  const changeItem = (field, value) => {
+    setItemForm((previous) => {
+      const next = { ...previous, [field]: value };
+      if ((field === 'sgst' || field === 'cgst') && Number(value) > 0) {
+        next.igst = 0;
+      }
+      if (field === 'igst' && Number(value) > 0) {
+        next.sgst = 0;
+        next.cgst = 0;
+      }
+      return next;
+    });
+    setItemErrors((previous) => ({ ...previous, [field]: '' }));
+  };
+
+  const addItem = () => {
+    const errors = {};
+    if (!itemForm.item_id) errors.item_name = 'Select an item.';
+    if (!itemForm.hsn_code.trim()) errors.hsn_code = 'HSN code is required.';
+    if (!Number.isInteger(Number(itemForm.quantity)) || Number(itemForm.quantity) <= 0) errors.quantity = 'Enter a positive whole quantity.';
+    if (itemForm.price === '' || Number(itemForm.price) < 0) errors.price = 'Enter a valid price.';
+
+
+    if (Object.keys(errors).length) {
       setItemErrors(errors);
       return;
     }
 
-    if (editingIndex !== null) {
-      setItems((prev) => prev.map((row, idx) => (idx === editingIndex ? { ...itemForm, _rowId: row._rowId } : row)));
-      toast.success('Item updated in the table.');
+    if (editingIndex === null) {
+      setItems((previous) => {
+        const duplicateIndex = previous.findIndex(
+          (row) => Number(row.item_id) === Number(itemForm.item_id),
+        );
+
+        if (duplicateIndex === -1) {
+          return [...previous, { ...itemForm, _rowId: ++rowCounter }];
+        }
+
+        return previous.map((row, index) => (
+          index === duplicateIndex
+            ? { ...itemForm, _rowId: row._rowId }
+            : row
+        ));
+      });
     } else {
-      setItems((prev) => [...prev, { ...itemForm, _rowId: ++rowIdCounter }]);
-      toast.success('Item added.');
+      setItems((previous) => previous.map((row, index) => (
+        index === editingIndex ? { ...itemForm, _rowId: row._rowId } : row
+      )));
     }
 
-    setItemForm(EMPTY_ITEM_FORM);
+    setItemForm(createEmptyItem());
     setEditingIndex(null);
     setItemErrors({});
   };
 
-  const handleClearItemForm = () => {
-    setItemForm(EMPTY_ITEM_FORM);
-    setEditingIndex(null);
-    setItemErrors({});
-  };
-
-  const handleEditRow = (index) => {
-    setItemForm(items[index]);
-    setEditingIndex(index);
-  };
-
-  const handleDeleteRow = (index) => {
-    setItems((prev) => prev.filter((_, idx) => idx !== index));
-    if (editingIndex === index) handleClearItemForm();
-  };
-
-  // ---------- Section 5 handlers ----------
-  const resetForm = () => {
-    setDetails(EMPTY_DETAILS);
-    setDetailErrors({});
-    setCustomerDetails(EMPTY_CUSTOMER_DETAILS);
+  const clearAll = () => {
+    setDetails(createEmptyDetails());
+    setItemForm(createEmptyItem());
     setItems([]);
-    handleClearItemForm();
+    setEditingIndex(null);
+    setDetailErrors({});
+    setItemErrors({});
   };
 
-  const handleSave = () => {
-    const errors = validateDetails();
-    if (Object.keys(errors).length > 0) {
-      setDetailErrors(errors);
-      toast.error('Please complete the required fields in Customer Details.');
+  const saveSale = () => {
+    const errors = {};
+    if (!details.customer_id) errors.customer_id = 'Customer is required.';
+    if (!details.bill_date) errors.bill_date = 'Bill date is required.';
+    if (details.bill_date < today()) errors.bill_date = 'Past bill dates are not allowed.';
+
+    if (details.show_shipping_address_on_bill) {
+      if (!details.ship_to.trim()) errors.ship_to = 'Ship To is required.';
+      if (!details.ship_to_address.trim()) errors.ship_to_address = 'Ship To Address is required.';
+      if (!details.ship_state) errors.ship_state = 'Shipping state is required.';
+    }
+
+    setDetailErrors(errors);
+    if (Object.keys(errors).length) {
+      toast.error('Please complete the required sales details.');
       return;
     }
-    if (items.length === 0) {
-      toast.error('Add at least one item before saving the bill.');
+    if (!items.length) {
+      toast.error('Add at least one item before saving.');
       return;
     }
 
     const payload = {
-      customer_id: details.customer_id,
+      customer_id: Number(details.customer_id),
       bill_date: details.bill_date,
-      is_interstate: details.is_interstate,
-      remarks: details.remarks || null,
-      items: items.map((i) => ({ item_id: i.item_id, quantity: Number(i.quantity) })),
+      due_term: details.due_term === '' ? null : Number(details.due_term),
+      due_date: details.due_date || null,
+      is_gst: Boolean(details.is_gst),
+      is_interstate: items.some((item) => Number(item.igst) > 0),
+      done_by: details.done_by || null,
+      brokerage: Number(details.brokerage) || 0,
+      broker_remarks: details.broker_remarks.trim() || null,
+      items: items.map((item) => ({
+        bill_item_id: item.bill_item_id,
+        item_id: Number(item.item_id),
+        quantity: Number(item.quantity),
+        rate: Number(item.price),
+        disc_percent: Number(item.disc_percent) || 0,
+        sgst: details.is_gst ? Number(item.sgst) || 0 : 0,
+        cgst: details.is_gst ? Number(item.cgst) || 0 : 0,
+        igst: details.is_gst ? Number(item.igst) || 0 : 0,
+      })),
+      delivery_date: details.delivery_date || null,
+      ship_to: details.ship_to.trim() || null,
+      ship_to_address: details.ship_to_address.trim() || null,
+      shipping_state: details.ship_state || null,
+      transport: details.transport.trim() || null,
+      reference: details.reference.trim() || null,
+      remarks: details.remarks.trim() || null,
+      show_shipping_address_on_bill: Boolean(details.show_shipping_address_on_bill),
     };
 
     setSaving(true);
-    createBill(payload)
-      .then((result) => {
-        toast.success(`Bill saved — Invoice No. ${result.invoice_no}.`);
-        // Fetch the full detail (with items) for the Print view -- the
-        // POST response alone has no items array.
-        return fetchBillById(result.bill_id);
+
+    const request = editId
+      ? updateBill(editId, payload)
+      : createBill(payload);
+
+    request
+      .then((saved) => {
+        if (editId) {
+          toast.success(`Sale updated. Invoice No. ${saved.bill.invoice_no}`);
+          navigate('/sales-history');
+          return null;
+        }
+
+        toast.success(`Sale saved. Invoice No. ${saved.invoice_no}`);
+        clearAll();
+        return null;
       })
-      .then((detail) => {
-        setSavedBillDetail(detail);
-        resetForm();
-      })
-      .catch((err) => toast.error(extractErrorMessage(err)))
+      .catch((error) => toast.error(extractErrorMessage(error)))
       .finally(() => setSaving(false));
   };
 
-  const handlePrint = () => {
-    if (!savedBillDetail) {
-      toast.error('Save the bill first — printing uses the saved invoice number and totals.');
-      return;
-    }
-    const doc = generateInvoicePDF(savedBillDetail, company);
-    doc.autoPrint();
-    const printWindow = window.open(doc.output('bloburl'), '_blank');
-    if (!printWindow) {
-      toast.info('Pop-up blocked — downloaded the invoice PDF instead.');
-      doc.save(`Invoice_${savedBillDetail.bill.invoice_no}.pdf`);
-    }
-  };
-
   return (
-    <div className="page sales-entry">
-      <div className="purchase-entry__header">
+    <div className="page general-transaction purchase-entry-final">
+      <header className="gt-page-header">
         <div>
-          <h1 className="purchase-entry__title">Sales Entry</h1>
-          <p className="purchase-entry__subtitle">Create a new sales bill for a customer.</p>
+          <h1>{editId ? 'Update Sale' : 'Sales Entry'}</h1>
+          <p>{editId ? 'Update the selected sales invoice and its transaction items.' : 'Create and save a customer sales bill using the Purchase Entry layout.'}</p>
         </div>
-      </div>
+        <span className="gt-status">{editId ? 'Edit Sale' : 'Sales'}</span>
+      </header>
 
-      {/* SECTION 1: CUSTOMER DETAILS */}
-      <Card title="Customer Details" className="purchase-entry__section">
-        <div className="purchase-details-grid">
-          <SearchableSelect
-            label="Customer"
-            name="customer_id"
-            placeholder="Search customer..."
-            options={customerOptions}
-            value={details.customer_id}
-            onChange={handleCustomerSelect}
-            required
-            error={detailErrors.customer_id}
-            emptyMessage="No customers found. Add one in Customer Management first."
-          />
+      {loadingSale && (
+        <div className="gt-loading-note">Loading sales details...</div>
+      )}
+
+      <Card title="Transaction Details" className="gt-card">
+        <div className="gt-details-grid">
+          <div className="gt-with-action">
+            <SearchableSelect
+              label="Customer"
+              options={customerOptions}
+              value={details.customer_id}
+              onChange={selectCustomer}
+              placeholder="Search customer..."
+              required
+              error={detailErrors.customer_id}
+            />
+            <button
+              type="button"
+              className="gt-plus"
+              onClick={() => {
+                navigate('/customers?openAdd=1&returnTo=/sales-entry');
+              }}
+              title="Add new customer"
+              aria-label="Add new customer"
+            >
+              +
+            </button>
+          </div>
+
+          <FormInput label="Bill No." value={details.invoice_no} placeholder="Generated automatically" disabled />
+          <FormInput label="Order No." value={details.order_no} placeholder="Generated automatically" disabled />
           <FormInput
             label="Bill Date"
-            name="bill_date"
             type="date"
+            min={today()}
             value={details.bill_date}
-            onChange={handleDetailChange('bill_date')}
+            onChange={(value) => changeDetail('bill_date', value)}
             required
             error={detailErrors.bill_date}
           />
-          <div className="form-field">
-            <label className="form-field__label">Invoice Number</label>
-            <span className="purchase-details-grid__auto-value">Generated automatically when you save</span>
-          </div>
-          <FormCheckbox
-            label="Interstate Supply (IGST)"
-            name="is_interstate"
-            checked={details.is_interstate}
-            onChange={handleDetailChange('is_interstate')}
+          <FormInput
+            label="Due Term (Days)"
+            type="number"
+            min="0"
+            value={details.due_term}
+            onChange={(value) => changeDetail('due_term', value)}
           />
+          <FormInput label="Due Date" type="date" value={details.due_date} disabled />
 
-          <FormInput label="Mobile" name="mobile" value={customerLoading ? 'Loading...' : customerDetails.mobile} onChange={() => {}} disabled />
-          <FormInput label="GSTIN" name="gstin" value={customerLoading ? 'Loading...' : customerDetails.gstin} onChange={() => {}} disabled />
-          <FormInput label="PAN" name="pan_card" value={customerLoading ? 'Loading...' : customerDetails.pan_card} onChange={() => {}} disabled />
-          <FormInput label="State" name="state" value={customerLoading ? 'Loading...' : customerDetails.state} onChange={() => {}} disabled />
-
-          <div className="purchase-details-grid__full">
-            <FormTextarea
-              label="Address"
-              name="address"
-              value={customerLoading ? 'Loading...' : [customerDetails.address, customerDetails.city, customerDetails.pincode].filter(Boolean).join(', ')}
-              onChange={() => {}}
-              rows={2}
-              disabled
-            />
-          </div>
-
-          <div className="purchase-details-grid__full">
-            <FormTextarea
-              label="Remarks"
-              name="remarks"
-              value={details.remarks}
-              onChange={handleDetailChange('remarks')}
-              rows={2}
+          <FormTextarea label="Address" value={details.address} onChange={() => {}} rows={2} disabled />
+          <FormInput label="City" value={details.city} onChange={() => {}} disabled />
+          <FormSelect
+            label="State"
+            value={details.customer_state || ''}
+            onChange={(value) => changeDetail('customer_state', value)}
+            options={STATE_OPTIONS}
+          />
+          <FormInput label="Contact No." value={details.contact_no} onChange={() => {}} disabled />
+          <FormInput label="Email" value={details.email} onChange={() => {}} disabled />
+          <DoneBySelect
+            label="Done By"
+            value={details.done_by}
+            onChange={(value) => changeDetail('done_by', value)}
+            savedValue={details._savedDoneBy}
+          />
+          <FormCheckbox
+            label="GST Applicable"
+            checked={details.is_gst}
+            onChange={(value) => changeDetail('is_gst', value)}
+          />
+          <FormInput
+            label="Brokerage"
+            type="number"
+            min="0"
+            value={details.brokerage}
+            onChange={(value) => changeDetail('brokerage', value)}
+          />
+          <div className="gt-span-2">
+            <FormInput
+              label="Broker's Remarks"
+              value={details.broker_remarks}
+              onChange={(value) => changeDetail('broker_remarks', value)}
             />
           </div>
         </div>
       </Card>
 
-      {/* SECTION 2: ITEM ENTRY */}
-      <Card
-        title="Item Entry"
-        subtitle="Search an item from Item Master, enter quantity — price and GST are pulled in automatically."
-        className="purchase-entry__section"
-      >
-        <SalesItemEntryForm
-          form={itemForm}
-          onFieldChange={handleItemFieldChange}
-          onItemSelect={handleItemSelect}
-          itemOptions={itemOptions}
-          isEditing={editingIndex !== null}
-          isInterstate={details.is_interstate}
-          onAdd={handleAddItem}
-          onClear={handleClearItemForm}
-          errors={itemErrors}
-        />
+      <Card title="Item Entry" className="gt-card">
+        <div className="gt-item-top">
+          <SearchableSelect
+            label="Item Name"
+            options={itemOptions}
+            value={itemForm.item_id}
+            onChange={selectItem}
+            placeholder="Search item name..."
+            required
+            error={itemErrors.item_name}
+            emptyMessage="No item found in Item Master."
+          />
+          <FormInput label="HSN Code" value={itemForm.hsn_code} onChange={() => {}} disabled required />
+          <FormSelect label="Unit" value={itemForm.unit} onChange={(value) => changeItem('unit', value)} options={UNIT_OPTIONS} />
+        </div>
+
+        <div className="gt-item-numbers sales-entry__item-numbers">
+          <FormInput
+            label="Quantity"
+            type="number"
+            min="0"
+            value={itemForm.quantity}
+            onChange={(value) => changeItem('quantity', value)}
+            required
+            error={itemErrors.quantity}
+          />
+          <FormInput
+            label="Price"
+            type="number"
+            min="0"
+            value={itemForm.price}
+            onChange={(value) => changeItem('price', value)}
+            required
+            error={itemErrors.price}
+          />
+          <div className="sales-stock-box">
+            <span>Stock</span>
+            <strong>{itemForm.item_id ? itemForm.current_stock : '—'}</strong>
+          </div>
+          <FormInput label="Discount %" type="number" min="0" max="100" value={itemForm.disc_percent} onChange={(value) => changeItem('disc_percent', value)} />
+          <FormInput label="SGST %" type="number" min="0" max="100" value={details.is_gst ? itemForm.sgst : 0} onChange={(value) => changeItem('sgst', value)} disabled={!details.is_gst || Number(itemForm.igst) > 0} />
+          <FormInput label="CGST %" type="number" min="0" max="100" value={details.is_gst ? itemForm.cgst : 0} onChange={(value) => changeItem('cgst', value)} disabled={!details.is_gst || Number(itemForm.igst) > 0} />
+          <FormInput label="IGST %" type="number" min="0" max="100" value={details.is_gst ? itemForm.igst : 0} onChange={(value) => changeItem('igst', value)} disabled={!details.is_gst || Number(itemForm.sgst) > 0 || Number(itemForm.cgst) > 0} />
+          <div className="gt-live-amount"><span>Amount</span><strong>{formatCurrency(liveAmount)}</strong></div>
+        </div>
+
+        <div className="gt-item-actions">
+          <Button variant="secondary" onClick={() => { setItemForm(createEmptyItem()); setEditingIndex(null); }}>Clear</Button>
+          <Button variant="primary" onClick={addItem}>{editingIndex === null ? 'Add Item' : 'Update Item'}</Button>
+        </div>
       </Card>
 
-      {/* SECTION 3: BILL ITEMS TABLE */}
-      <Card title={`Bill Items ${items.length ? `(${items.length})` : ''}`} className="purchase-entry__section">
-        <SalesItemsTable items={items} isInterstate={details.is_interstate} onEdit={handleEditRow} onDelete={handleDeleteRow} />
+      <Card title="Transaction Items" className="gt-card">
+        <div className="gt-table-wrap">
+          <table className="gt-table">
+            <thead>
+              <tr>
+                <th>Sr.</th><th>Item</th><th>HSN</th><th>Qty</th><th>Unit</th>
+                <th>Price</th><th>Disc.</th><th>SGST</th><th>CGST</th><th>IGST</th>
+                <th>Amount</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {!items.length ? (
+                <tr><td colSpan="12" className="gt-empty">No items added yet.</td></tr>
+              ) : items.map((row, index) => (
+                <tr key={row._rowId}>
+                  <td>{index + 1}</td><td>{row.item_name}</td><td>{row.hsn_code}</td>
+                  <td>{row.quantity}</td><td>{row.unit}</td><td>{formatCurrency(row.price)}</td>
+                  <td>{row.disc_percent}%</td><td>{row.sgst}%</td><td>{row.cgst}%</td><td>{row.igst}%</td>
+                  <td>{formatCurrency(computeLineAmounts(row, details.is_gst).amount)}</td>
+                  <td>
+                    <button type="button" className="gt-link" onClick={() => { setItemForm(row); setEditingIndex(index); }}>Edit</button>
+                    <button type="button" className="gt-link gt-link--danger" onClick={() => setItems((previous) => previous.filter((_, rowIndex) => rowIndex !== index))}>Delete</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </Card>
 
-      {/* SECTION 4: LIVE TOTALS (right aligned, sticky) */}
-      <div className="purchase-entry__summary-row">
-        <Card title="Total Summary" className="purchase-entry__summary-card">
-          <BillSummaryCard totals={totals} isInterstate={details.is_interstate} />
+      <div className="gt-bottom-grid">
+        <Card title="Extra Address & Delivery Details" className="gt-card">
+          <FormCheckbox
+            label="Show this shipping address on bill"
+            checked={details.show_shipping_address_on_bill}
+            onChange={(value) => changeDetail('show_shipping_address_on_bill', value)}
+          />
+          <div className="gt-delivery-grid">
+            <FormInput label="Delivery Date" type="date" min={today()} value={details.delivery_date} onChange={(value) => changeDetail('delivery_date', value)} />
+            <FormInput label="Ship To" value={details.ship_to} onChange={(value) => changeDetail('ship_to', value)} required={details.show_shipping_address_on_bill} error={detailErrors.ship_to} />
+            <FormInput label="Transport" value={details.transport} onChange={(value) => changeDetail('transport', value)} />
+            <div className="gt-span-2">
+              <FormTextarea label="Ship To Address" value={details.ship_to_address} onChange={(value) => changeDetail('ship_to_address', value)} rows={3} required={details.show_shipping_address_on_bill} error={detailErrors.ship_to_address} />
+            </div>
+            <FormSelect label="State" value={details.ship_state} onChange={(value) => changeDetail('ship_state', value)} options={STATE_OPTIONS} required={details.show_shipping_address_on_bill} error={detailErrors.ship_state} />
+            <FormInput label="Reference" value={details.reference} onChange={(value) => changeDetail('reference', value)} />
+            <div className="gt-span-2"><FormTextarea label="Remarks" value={details.remarks} onChange={(value) => changeDetail('remarks', value)} rows={3} /></div>
+          </div>
+        </Card>
+
+        <Card title="Total Summary" className="gt-card gt-summary">
+          <div><span>Taxable Amount</span><strong>{formatCurrency(totals.taxableAmount)}</strong></div>
+          <div><span>SGST Total</span><strong>{formatCurrency(totals.sgstTotal)}</strong></div>
+          <div><span>CGST Total</span><strong>{formatCurrency(totals.cgstTotal)}</strong></div>
+          <div><span>IGST Total</span><strong>{formatCurrency(totals.igstTotal)}</strong></div>
+          <div className="gt-grand"><span>Grand Total</span><strong>{formatCurrency(totals.grandTotal)}</strong></div>
         </Card>
       </div>
 
-      {/* SECTION 5: ACTION BUTTONS */}
-      <div className="purchase-entry__footer-actions">
-        <Button variant="secondary" onClick={() => setResetConfirmOpen(true)} disabled={saving}>
-          Reset
-        </Button>
-        <Button variant="ghost" onClick={handlePrint} disabled={saving}>
-          Print
-        </Button>
-        <Button variant="primary" onClick={handleSave} disabled={saving}>
-          {saving ? 'Saving...' : 'Save Bill'}
-        </Button>
+      <div className="gt-footer-actions">
+        <Button variant="secondary" onClick={clearAll} disabled={saving}>Clear</Button>
+        <Button variant="primary" onClick={saveSale} disabled={saving}>{saving
+          ? (editId ? 'Updating Sale...' : 'Saving Sale...')
+          : (editId ? 'Update Sale' : 'Save Sale')}</Button>
       </div>
-
-      <ConfirmDialog
-        open={resetConfirmOpen}
-        title="Reset Sales Entry"
-        message="This will clear all entered details and items on this page. This cannot be undone."
-        confirmLabel="Reset"
-        onCancel={() => setResetConfirmOpen(false)}
-        onConfirm={() => {
-          resetForm();
-          setResetConfirmOpen(false);
-        }}
-      />
     </div>
   );
 }

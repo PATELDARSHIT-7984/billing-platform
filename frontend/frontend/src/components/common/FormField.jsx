@@ -54,7 +54,7 @@ export function FormSelect({ label, name, value, onChange, options, required = f
         className={`form-field__input form-field__select ${error ? 'form-field__input--error' : ''}`}
       >
         {options.map((opt) => (
-          <option key={opt.value} value={opt.value}>
+          <option key={opt.value} value={opt.value} disabled={opt.disabled}>
             {opt.label}
           </option>
         ))}

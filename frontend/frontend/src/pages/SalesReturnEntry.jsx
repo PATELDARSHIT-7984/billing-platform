@@ -1,3 +1,4 @@
+import DoneBySelect from '../components/common/DoneBySelect';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Card from '../components/common/Card';
@@ -19,6 +20,7 @@ import {
   updateSalesReturn,
 } from '../services/salesReturnService';
 import { extractErrorMessage } from '../services/api';
+import { saveDraft, loadDraft, clearDraft } from '../utils/draftStorage';
 import { UNIT_OPTIONS } from '../config/units';
 import {
   computeLineAmounts,
@@ -47,11 +49,6 @@ const STATE_OPTIONS = STATES.map((value) => ({
   label: value || 'Select State',
 }));
 
-const DONE_BY_OPTIONS = [
-  { value: '', label: 'Select person' },
-  { value: 'Lalit', label: 'Lalit' },
-  { value: 'Darshit', label: 'Darshit' },
-];
 
 const createEmptyDetails = () => ({
   customer_id: null,
@@ -114,6 +111,7 @@ export default function SalesReturnEntry() {
   const newCustomerId = searchParams.get('newCustomerId');
   const editId = searchParams.get('edit');
   const loadedEditId = useRef(null);
+  const DRAFT_KEY = 'sales-return-entry';
 
   const [customers, setCustomers] = useState([]);
   const [itemRecords, setItemRecords] = useState([]);
@@ -138,7 +136,9 @@ export default function SalesReturnEntry() {
     loadCustomers();
     loadItems();
 
-    if (!editId) {
+    const restoringDraft = !editId && Boolean(loadDraft(DRAFT_KEY));
+
+    if (!editId && !restoringDraft) {
       fetchNextSalesReturnNumbers()
         .then((numbers) => {
           setDetails((previous) => ({
@@ -150,8 +150,17 @@ export default function SalesReturnEntry() {
         .catch((error) => toast.error(extractErrorMessage(error)));
     }
 
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editId]);
+
+  useEffect(() => {
+    if (editId) return;
+    const draft = loadDraft(DRAFT_KEY);
+    if (!draft) return;
+    setDetails(draft.details);
+    setItems(draft.items);
+    setItemForm(draft.itemForm);
+    clearDraft(DRAFT_KEY);
+  }, []);
 
   useEffect(() => {
     if (!newCustomerId || !customers.length) return;
@@ -159,10 +168,20 @@ export default function SalesReturnEntry() {
     if (!customer) return;
 
     fetchCustomerById(getCustomerId(customer))
-      .then((full) => applySelectedCustomer(full))
+      .then((full) => {
+        setDetails((previous) => ({
+          ...previous,
+          customer_id: getCustomerId(full),
+          address: full?.address || '',
+          city: full?.city || '',
+          customer_state: full?.state || '',
+          contact_no: full?.mobile || '',
+          email: full?.email || '',
+        }));
+      })
       .catch((error) => toast.error(extractErrorMessage(error)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newCustomerId, customers]);
+
 
   useEffect(() => {
     if (
@@ -197,6 +216,7 @@ export default function SalesReturnEntry() {
           contact_no: salesReturn.contact_no || customer?.mobile || '',
           email: salesReturn.email || customer?.email || '',
           done_by: salesReturn.done_by || '',
+          _savedDoneBy: salesReturn.done_by || '',
           brokerage: salesReturn.brokerage ?? 0,
           broker_remarks: salesReturn.broker_remarks || '',
           delivery_date: salesReturn.delivery_date || '',
@@ -398,7 +418,6 @@ export default function SalesReturnEntry() {
       )));
     }
 
-    // The entry form is cleared after every add. Existing rows remain in Transaction Items.
     setItemForm(createEmptyItem());
     setEditingIndex(null);
     setItemErrors({});
@@ -423,9 +442,6 @@ export default function SalesReturnEntry() {
     if (!details.return_date) errors.return_date = 'Return date is required.';
     if (!details.return_reason.trim()) {
       errors.return_reason = 'Return reason is required.';
-    }
-    if (details.return_date < today()) {
-      errors.return_date = 'Past return dates are not allowed.';
     }
 
     if (details.show_shipping_address_on_bill) {
@@ -544,7 +560,10 @@ export default function SalesReturnEntry() {
             <button
               type="button"
               className="gt-plus"
-              onClick={() => navigate('/customers?openAdd=1&returnTo=/sales-return-entry')}
+              onClick={() => {
+                saveDraft(DRAFT_KEY, { details, items, itemForm });
+                navigate('/customers?openAdd=1&returnTo=/sales-return-entry');
+              }}
               title="Add new customer"
               aria-label="Add new customer"
             >
@@ -571,7 +590,6 @@ export default function SalesReturnEntry() {
           <FormInput
             label="Return Date"
             type="date"
-            min={today()}
             value={details.return_date}
             onChange={(value) => changeDetail('return_date', value)}
             required
@@ -596,11 +614,11 @@ export default function SalesReturnEntry() {
           />
           <FormInput label="Contact No." value={details.contact_no} onChange={() => {}} disabled />
           <FormInput label="Email" value={details.email} onChange={() => {}} disabled />
-          <FormSelect
+          <DoneBySelect
             label="Done By"
             value={details.done_by}
             onChange={(value) => changeDetail('done_by', value)}
-            options={DONE_BY_OPTIONS}
+            savedValue={details._savedDoneBy}
           />
           <FormCheckbox
             label="GST Applicable"
@@ -631,9 +649,10 @@ export default function SalesReturnEntry() {
             options={itemOptions}
             value={itemForm.item_id}
             onChange={selectItem}
-            placeholder="Search item name..."
+            placeholder="Search existing Item Master item..."
             required
             error={itemErrors.item_name}
+            emptyMessage="No active Item Master item found."
           />
           <FormInput label="HSN Code" value={itemForm.hsn_code} onChange={() => {}} disabled required />
           <FormSelect label="Unit" value={itemForm.unit} onChange={(value) => changeItem('unit', value)} options={UNIT_OPTIONS} />
@@ -713,7 +732,7 @@ export default function SalesReturnEntry() {
             onChange={(value) => changeDetail('show_shipping_address_on_bill', value)}
           />
           <div className="gt-delivery-grid">
-            <FormInput label="Delivery Date" type="date" min={today()} value={details.delivery_date} onChange={(value) => changeDetail('delivery_date', value)} />
+            <FormInput label="Delivery Date" type="date" value={details.delivery_date} onChange={(value) => changeDetail('delivery_date', value)} />
             <FormInput label="Ship To" value={details.ship_to} onChange={(value) => changeDetail('ship_to', value)} required={details.show_shipping_address_on_bill} error={detailErrors.ship_to} />
             <FormInput label="Transport" value={details.transport} onChange={(value) => changeDetail('transport', value)} />
             <div className="gt-span-2">
