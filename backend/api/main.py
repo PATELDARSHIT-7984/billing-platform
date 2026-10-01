@@ -3,6 +3,7 @@ from fastapi.exceptions import HTTPException, RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.config.exceptions import AppException
+from api.config.settings import FRONTEND_ORIGINS
 from api.config.exception_handlers import (
     app_exception_handler,
     general_exception_handler,
@@ -26,12 +27,10 @@ from api.router.sales_return import router as sales_return_router
 
 app = FastAPI(title="Billing API")
 
-# Dev-friendly CORS -- the frontend (Vite) usually runs on a different
-# port than the API, so browser requests need this to not be blocked.
-# Tighten allow_origins to your real frontend URL(s) before production.
+# Exact browser origins come from environment configuration. This is not authentication.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=FRONTEND_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
