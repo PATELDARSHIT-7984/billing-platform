@@ -13,9 +13,10 @@ coverage/
 htmlcov/
 .pytest_cache/
 
-backend/backups/
+backups/
 *.dump
 *.backup
+*.dump.partial
 
 pdf-review/*.pdf
 
