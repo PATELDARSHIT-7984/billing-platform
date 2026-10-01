@@ -8,6 +8,9 @@ from api.router import party_router
 from api.router import customer_router
 from api.router import bill_router
 from api.router import item_master_router
+from api.router import purchase_return_router
+from api.router import quotation_router
+from api.router import sales_return_router
 
 app = FastAPI()
 
@@ -24,7 +27,11 @@ app.include_router(purchase_router.router)
 app.include_router(party_router.router)
 app.include_router(customer_router.router)  
 app.include_router(bill_router.router)    
-app.include_router(item_master_router.router)    
+app.include_router(item_master_router.router)   
+app.include_router(purchase_return_router.router)
+app.include_router(quotation_router.router)
+app.include_router(sales_return_router.router)
+
 @app.get("/")
 
 def home():
