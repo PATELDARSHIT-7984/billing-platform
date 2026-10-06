@@ -1,3 +1,4 @@
+import { handleEnterNavigation } from '../utils/enterNavigation';
 import { useEffect, useState } from 'react';
 import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
@@ -178,7 +179,7 @@ export default function PartyFormModal({ open, mode = 'add', initialData = null,
         </>
       }
     >
-      <form className="party-form" onSubmit={handleSubmit} noValidate>
+      <form data-enter-navigation onKeyDown={handleEnterNavigation} className="party-form" onSubmit={handleSubmit} noValidate>
         <FormRow>
           <FormInput label="Party Name" name="name" value={form.name} onChange={setField('name')} required error={errors.name} autoFocus />
           <FormSelect label="Party Type" name="party_type" value={form.party_type} onChange={setField('party_type')} options={PARTY_TYPE_OPTIONS} required />

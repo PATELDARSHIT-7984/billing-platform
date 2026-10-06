@@ -1,3 +1,4 @@
+import { handleEnterNavigation } from '../utils/enterNavigation';
 import { useEffect, useState } from 'react';
 import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
@@ -143,7 +144,7 @@ export default function CustomerFormModal({ open, mode = 'add', initialData = nu
         </>
       }
     >
-      <form onSubmit={handleSubmit} noValidate>
+      <form data-enter-navigation onKeyDown={handleEnterNavigation} onSubmit={handleSubmit} noValidate>
         <FormRow>
           <FormInput
             label="Customer Name"

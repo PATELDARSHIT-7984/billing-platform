@@ -1,3 +1,4 @@
+import { handleEnterNavigation } from '../utils/enterNavigation';
 import { useEffect, useState } from 'react';
 import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
@@ -179,7 +180,7 @@ export default function RojmelFormModal({
         </>
       }
     >
-      <form className="rojmel-form" onSubmit={handleSubmit} noValidate>
+      <form data-enter-navigation onKeyDown={handleEnterNavigation} className="rojmel-form" onSubmit={handleSubmit} noValidate>
         <div className="rojmel-radio-field">
           <span className="rojmel-radio-label">Transaction Type <span>*</span></span>
           <div className="rojmel-radio-group">
