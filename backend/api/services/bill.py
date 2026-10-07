@@ -1,3 +1,4 @@
+from api.services.customer import replace_customer_effect
 from api.validation.done_by import validate_done_by_snapshot
 from collections import defaultdict
 from decimal import Decimal, ROUND_HALF_UP
@@ -812,6 +813,7 @@ def create_bill(
                 bill_data.bill_date
             )
 
+        replace_customer_effect(db, new_id=bill.customer_id, new_effect=-bill.grand_total)
         db.commit()
     except Exception:
         db.rollback()
@@ -905,6 +907,8 @@ def update_bill(
             bill_id,
         )
     )
+
+    old_customer_id, old_total = bill.customer_id, bill.grand_total
 
     if "done_by" in bill_data.model_fields_set:
         validate_done_by_snapshot(db, bill_data.done_by, previous=bill.done_by)
@@ -1283,6 +1287,7 @@ def update_bill(
             )
         )
 
+        replace_customer_effect(db, old_customer_id, -old_total, bill.customer_id, -bill.grand_total)
         db.commit()
     except Exception:
         db.rollback()
@@ -1374,6 +1379,7 @@ def delete_bill(
             bill,
         )
 
+        replace_customer_effect(db, old_id=bill.customer_id, old_effect=-bill.grand_total)
         db.commit()
 
     except Exception:

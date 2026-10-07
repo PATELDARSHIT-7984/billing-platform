@@ -4,6 +4,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from api.model.rojmel import Rojmel
+from api.services.customer import replace_customer_effect
 from api.services.party import apply_party_balance_delta
 from api.repository import rojmel as rojmel_repo
 from api.schema.rojmel import RojmelCreate, RojmelUpdate
@@ -50,9 +51,14 @@ def _validate_relations(db: Session, cash_bank_id: int, done_by_id: int, party_i
         rojmel_validation.validate_party_exists(db, party_id)
 
 
+def _customer_effect(entry):
+    return entry.net_amount if entry.transaction_type == "Cr Pay" else -entry.net_amount
+
+
 def create_rojmel(db: Session, rojmel_in: RojmelCreate) -> Rojmel:
     try:
         _validate_relations(db, cash_bank_id=rojmel_in.cash_bank_id, done_by_id=rojmel_in.done_by_id, party_id=rojmel_in.party_id)
+        rojmel_validation.validate_customer_account(db, rojmel_in.party_id, rojmel_in.customer_id, rojmel_in.transaction_type, require_active=True)
         supplier = rojmel_validation.validate_and_get_supplier_payment_party(
             db, rojmel_in.transaction_type, rojmel_in.party_id, require_active=True,
         )
@@ -63,6 +69,7 @@ def create_rojmel(db: Session, rojmel_in: RojmelCreate) -> Rojmel:
             rojmel_in.amount, rojmel_in.sgst_percent, rojmel_in.cgst_percent, rojmel_in.igst_percent,
         )
         new_rojmel = rojmel_repo.create_rojmel(db, data=rojmel_payload)
+        replace_customer_effect(db, new_id=new_rojmel.customer_id, new_effect=_customer_effect(new_rojmel))
         if supplier is not None:
             apply_party_balance_delta(db, supplier.id, -new_rojmel.net_amount)
         db.commit()
@@ -110,10 +117,11 @@ def update_rojmel(db: Session, rojmel_id: int, rojmel_in: RojmelUpdate) -> Rojme
         )
         old_supplier_id = old_supplier.id if old_supplier is not None else None
         old_net_amount = rojmel.net_amount
+        old_customer_id, old_customer_effect = rojmel.customer_id, _customer_effect(rojmel)
 
         bank_id = rojmel_in.cash_bank_id if rojmel_in.cash_bank_id is not None else rojmel.cash_bank_id
         done_by_id = rojmel_in.done_by_id if rojmel_in.done_by_id is not None else rojmel.done_by_id
-        party_id = rojmel_in.party_id if rojmel_in.party_id is not None else rojmel.party_id
+        party_id = rojmel_in.party_id if "party_id" in rojmel_in.model_fields_set else rojmel.party_id
         if rojmel_in.cash_bank_id or rojmel_in.done_by_id or rojmel_in.party_id:
             _validate_relations(db, cash_bank_id=bank_id, done_by_id=done_by_id, party_id=party_id)
 
@@ -122,6 +130,8 @@ def update_rojmel(db: Session, rojmel_id: int, rojmel_in: RojmelUpdate) -> Rojme
         for key, value in update_payload.items():
             setattr(rojmel, key, value)
 
+        rojmel_validation.validate_customer_account(db, rojmel.party_id, rojmel.customer_id, rojmel.transaction_type,
+            require_active=rojmel.customer_id != old_customer_id)
         new_supplier = rojmel_validation.validate_and_get_supplier_payment_party(
             db, rojmel.transaction_type, rojmel.party_id,
             require_active=old_supplier_id is None or rojmel.party_id != old_supplier_id,
@@ -132,16 +142,17 @@ def update_rojmel(db: Session, rojmel_id: int, rojmel_in: RojmelUpdate) -> Rojme
             rojmel.amount, rojmel.sgst_percent, rojmel.cgst_percent, rojmel.igst_percent,
         )
         updated_rojmel = rojmel_repo.update_rojmel(db, rojmel=rojmel, data={})
+        replace_customer_effect(db, old_customer_id, old_customer_effect, updated_rojmel.customer_id, _customer_effect(updated_rojmel))
         if old_supplier_id == new_supplier_id:
             if new_supplier_id is not None:
                 delta = old_net_amount - updated_rojmel.net_amount
                 if delta:
                     apply_party_balance_delta(db, new_supplier_id, delta)
         else:
-            if old_supplier_id is not None:
-                apply_party_balance_delta(db, old_supplier_id, old_net_amount)
-            if new_supplier_id is not None:
-                apply_party_balance_delta(db, new_supplier_id, -updated_rojmel.net_amount)
+            # Customer effects above always precede Party effects; each table uses ID order.
+            changes = [(old_supplier_id, old_net_amount), (new_supplier_id, -updated_rojmel.net_amount)]
+            for party_id, delta in sorted((id, amount) for id, amount in changes if id is not None):
+                apply_party_balance_delta(db, party_id, delta)
         db.commit()
     except Exception:
         db.rollback()
@@ -158,7 +169,9 @@ def delete_rojmel(db: Session, rojmel_id: int) -> dict:
         )
         old_net_amount = rojmel.net_amount
         receipt_no = rojmel.receipt_no
+        old_customer_id, old_customer_effect = rojmel.customer_id, _customer_effect(rojmel)
         rojmel_repo.delete_rojmel(db, rojmel=rojmel)
+        replace_customer_effect(db, old_id=old_customer_id, old_effect=old_customer_effect)
         if supplier is not None:
             apply_party_balance_delta(db, supplier.id, old_net_amount)
         db.commit()

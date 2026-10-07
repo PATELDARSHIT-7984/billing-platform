@@ -27,6 +27,7 @@ def date_range(period="month", start_date=None, end_date=None, today=None):
 def summary(db, start, end):
     totals = repo.transaction_totals(db, start, end)
     balances = repo.supplier_balances(db)
+    customers = repo.customer_balances(db)
     cash = get_rojmel_summary(db, start_date=start, end_date=end)
     result = {f'total_{key}': value for key, value in totals.items()}
     result.update(net_sales=totals['sales'] - totals['sales_return'],
@@ -34,7 +35,8 @@ def summary(db, start, end):
                   supplier_payable=balances.get('Credit', Decimal('0.00')),
                   supplier_advance=balances.get('Debit', Decimal('0.00')),
                   total_received=cash['total_received'], total_paid=cash['total_paid'],
-                  net_cash_flow=cash['net_earning'], customer_receivable=None)
+                  net_cash_flow=cash['net_earning'], customer_receivable=customers.get('Debit', Decimal('0.00')),
+                  customer_credit=customers.get('Credit', Decimal('0.00')))
     for kind in ('sales', 'purchase'):
         result[f'{kind}_return_rate'] = ((totals[f'{kind}_return'] / totals[kind] * 100).quantize(Decimal('.01'))
                                          if totals[kind] else Decimal('0.00'))

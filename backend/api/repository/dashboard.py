@@ -42,6 +42,12 @@ def supplier_balances(db):
                 .group_by(Party.current_balance_type).all())
 
 
+def customer_balances(db):
+    # Include inactive accounts: outstanding obligations do not vanish on deactivation.
+    return dict(db.query(Customer.current_balance_type, func.sum(Customer.current_balance))
+                .group_by(Customer.current_balance_type).all())
+
+
 def search_accounts(query, model, name, search):
     if search and search.strip():
         pattern = '%' + search.strip().replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
@@ -96,8 +102,8 @@ def recent_candidates(db, start, end, limit=5):
         query = db.query(pk.label('id'), number.label('number'), day.label('date'), name.label('name'), money(model.grand_total).label('amount'))
         rows = dated(query.outerjoin(partner, fk == partner.id).filter(model.is_active.is_(True)), day, start, end).order_by(day.desc(), pk.desc()).limit(limit).all()
         result.extend(dict(row._mapping, type=key) for row in rows)
-    rows = dated(db.query(Rojmel.id, Rojmel.receipt_no.label('number'), Rojmel.effective_date.label('date'), Party.name, Rojmel.net_amount.label('amount'), Rojmel.transaction_type)
-                 .outerjoin(Party, Rojmel.party_id == Party.id), Rojmel.effective_date, start, end).order_by(Rojmel.effective_date.desc(), Rojmel.id.desc()).limit(limit).all()
+    rows = dated(db.query(Rojmel.id, Rojmel.receipt_no.label('number'), Rojmel.effective_date.label('date'), func.coalesce(Party.name, Customer.customer_name).label('name'), Rojmel.net_amount.label('amount'), Rojmel.transaction_type)
+                 .outerjoin(Party, Rojmel.party_id == Party.id).outerjoin(Customer, Rojmel.customer_id == Customer.id), Rojmel.effective_date, start, end).order_by(Rojmel.effective_date.desc(), Rojmel.id.desc()).limit(limit).all()
     for row in rows:
         entry = dict(row._mapping)
         entry['type'] = entry.pop('transaction_type').value

@@ -967,17 +967,9 @@ def update_purchase_by_id(
         # reverse old supplier purchase,
         # then apply complete purchase to new supplier.
         else:
-            apply_party_balance_delta(
-                db,
-                old_party_id,
-                -old_grand_total,
-            )
-
-            apply_party_balance_delta(
-                db,
-                new_party_id,
-                new_grand_total,
-            )
+            # Consistent account lock order for opposite-direction switches.
+            for party_id, delta in sorted(((old_party_id, -old_grand_total), (new_party_id, new_grand_total))):
+                apply_party_balance_delta(db, party_id, delta)
 
         # -------------------------------------------------------------------------
         # One final transaction commit

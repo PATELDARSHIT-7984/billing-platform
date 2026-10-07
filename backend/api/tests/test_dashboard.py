@@ -66,7 +66,8 @@ def test_summary_totals_and_current_balances(db_session, accounts):
                               supplier_payable=2100, supplier_advance=700,
                               sales_return_rate=10, purchase_return_rate=12).items():
         assert result[key] == Decimal(expected)
-    assert result['customer_receivable'] is None
+    assert result['customer_receivable'] == 0
+    assert result['customer_credit'] == 0
     assert service.summary(db_session, date(2000, 1, 1), date(2000, 1, 2))['supplier_payable'] == 2100
 
 
