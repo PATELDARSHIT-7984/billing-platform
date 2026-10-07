@@ -1,3 +1,4 @@
+import { handleEnterNavigation } from '../utils/enterNavigation';
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/common/PageHeader';
@@ -143,7 +144,7 @@ export default function BankManagement() {
           </>
         }
       >
-        <form onSubmit={handleFormSubmit} noValidate>
+        <form data-enter-navigation onKeyDown={handleEnterNavigation} onSubmit={handleFormSubmit} noValidate>
           <FormInput label="Bank Name" name="name" value={name} onChange={setName} required autoFocus />
         </form>
       </Modal>

@@ -1,3 +1,4 @@
+import { handleEnterNavigation } from '../utils/enterNavigation';
 import { useEffect, useState } from 'react';
 import Card from '../components/common/Card';
 import Button from '../components/common/Button';
@@ -123,7 +124,7 @@ export default function CompanySettings() {
   }
 
   return (
-    <div className="page">
+    <div className="page" data-enter-navigation onKeyDown={handleEnterNavigation}>
       <div className="purchase-entry__header">
         <div>
           <h1 className="purchase-entry__title">Company Settings</h1>

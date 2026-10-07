@@ -1,3 +1,4 @@
+import { handleEnterNavigation } from '../utils/enterNavigation';
 import DoneBySelect from '../components/common/DoneBySelect';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -532,7 +533,7 @@ export default function SalesReturnEntry() {
   };
 
   return (
-    <div className="page general-transaction purchase-entry-final">
+    <div className="page general-transaction purchase-entry-final" data-enter-navigation onKeyDown={handleEnterNavigation}>
       <header className="gt-page-header">
         <div>
           <h1>{editId ? 'Update Sales Return' : 'Sales Return Entry'}</h1>
