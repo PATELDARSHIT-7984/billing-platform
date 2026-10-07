@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Date, Numeric, ForeignKey, Enum, Text
+from sqlalchemy import Column, Integer, String, Date, Numeric, ForeignKey, Enum, Text, CheckConstraint
 from api.config.database import Base
 import enum
 
@@ -13,6 +13,7 @@ class TransactionType(str, enum.Enum):
 class Rojmel(Base):
     # Daily cash/bank ledger entry (a receipt or payment record).
     __tablename__ = "rojmel"
+    __table_args__ = (CheckConstraint("party_id IS NULL OR customer_id IS NULL", name="ck_rojmel_one_account"),)
 
     id = Column(Integer, primary_key=True, index=True)
     transaction_type = Column(Enum(TransactionType), nullable=False)
@@ -26,6 +27,7 @@ class Rojmel(Base):
     # literal here doesn't fail at import time, only when the DDL/insert
     # actually hits Postgres, so it's an easy one to miss.
     party_id = Column(Integer, ForeignKey("parties.id"), nullable=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
     cash_bank_id = Column(Integer, ForeignKey("banks.id"), nullable=False)
     done_by_id = Column(Integer, ForeignKey("doneby.id"), nullable=False)
 

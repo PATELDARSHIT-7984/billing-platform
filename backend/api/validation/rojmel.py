@@ -1,6 +1,7 @@
 from fastapi import HTTPException, status
 
 from api.repository import rojmel as rojmel_repository
+from api.repository.customer import get_customer_by_id_any_status
 
 
 def validate_and_get_active_bank(db, cash_bank_id: int):
@@ -34,7 +35,7 @@ def validate_and_get_supplier_payment_party(db, transaction_type, party_id, requ
     if transaction_type != "Dr Pay" or party_id is None:
         return None
     party = validate_party_exists(db, party_id)
-    if party is None or party.party_type != "Supplier":
+    if party is None or party.party_type not in ("Supplier", "PURCHASE_VENDOR"):
         return None
     if require_active and not party.is_active:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Selected supplier is inactive.")
@@ -57,3 +58,15 @@ def validate_gst_type_is_exclusive(sgst, cgst, igst) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="IGST cannot be applied together with SGST or CGST.",
         )
+
+
+def validate_customer_account(db, party_id, customer_id, transaction_type, require_active=False):
+    if party_id is not None and customer_id is not None:
+        raise HTTPException(422, "Choose either Party or Customer, not both.")
+    if customer_id is None:
+        return
+    if transaction_type not in ("Cr Pay", "Dr Pay"):
+        raise HTTPException(422, "Customer entries must be Cr Pay (receipt) or Dr Pay (payment).")
+    customer = get_customer_by_id_any_status(db, customer_id)
+    if customer is None or (require_active and not customer.is_active):
+        raise HTTPException(400, "Selected Customer is invalid or inactive.")

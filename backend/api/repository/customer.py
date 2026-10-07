@@ -43,6 +43,17 @@ def get_active_customer_by_id(db: Session, customer_id: int) -> Customer | None:
     )
 
 
+def get_customer_by_id_any_status(db: Session, customer_id: int) -> Customer | None:
+    return db.query(Customer).filter(Customer.id == customer_id).first()
+
+
+def get_customer_for_balance_update(db: Session, customer_id: int) -> Customer | None:
+    # NO KEY UPDATE serializes balance writers without conflicting with FK checks.
+    # Refresh the identity map: validation may have loaded a stale account earlier.
+    return (db.query(Customer).filter(Customer.id == customer_id)
+            .populate_existing().with_for_update(key_share=True).first())
+
+
 def get_customer_by_gstin(db: Session, gstin: str) -> Customer | None:
     return (
         db.query(Customer)
@@ -68,7 +79,8 @@ def list_customers(
     search: str | None = None,
     skip: int = 0,
     limit: int = 100,
-) -> list[Customer]:
+    count_only: bool = False,
+) -> list[Customer] | int:
     query = db.query(Customer).filter(Customer.is_active == True)
 
     if search:
@@ -78,8 +90,11 @@ def list_customers(
             | (Customer.mobile.ilike(f"%{search}%"))
         )
 
+    if count_only:
+        return query.count()
+
     return (
-        query.order_by(Customer.customer_name.asc())
+        query.order_by(Customer.customer_name.asc(), Customer.id.asc())
         .offset(skip)
         .limit(limit)
         .all()

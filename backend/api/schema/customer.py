@@ -2,9 +2,14 @@ from pydantic import BaseModel, Field, EmailStr, field_validator
 from typing import Optional
 from datetime import datetime
 import re
+from decimal import Decimal
+from api.utils.account_balance import BalanceType
 
 
 class CustomerCreate(BaseModel):
+    opening_balance: Decimal = Field(default=Decimal("0.00"), ge=0, max_digits=18, decimal_places=2)
+    balance_type: BalanceType = "Credit"
+
     customer_name: str = Field(..., min_length=2, max_length=100)
     mobile: str = Field(...)
 
@@ -54,6 +59,11 @@ class CustomerUpdate(CustomerCreate):
 
 
 class CustomerResponse(BaseModel):
+    opening_balance: Decimal
+    current_balance: Decimal
+    balance_type: BalanceType
+    current_balance_type: BalanceType
+
     id: int
     customer_name: str
     customer_code: Optional[str] = None

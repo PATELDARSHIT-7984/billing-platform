@@ -4,6 +4,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from api.model.party import Party
+from api.utils.account_balance import signed_balance, balance_after_delta
 from api.repository import party as party_repo
 from api.schema.party import PartyCreate, PartyUpdate
 from api.validation import party as party_validation
@@ -52,20 +53,16 @@ def apply_party_balance_delta(
     amount_delta: Decimal | int | float,
 ) -> Party:
     """Apply a signed payable delta; the caller owns commit and rollback."""
-    party = party_repo.get_party_by_id_any_status(db, party_id)
+    party = party_repo.get_party_for_balance_update(db, party_id)
     if not party:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Party not found")
 
-    signed_balance = Decimal(str(party.current_balance))
-    if party.current_balance_type == "Debit":
-        signed_balance = -signed_balance
-
-    new_balance = signed_balance + Decimal(str(amount_delta))
+    amount, direction = balance_after_delta(party.current_balance, party.current_balance_type, amount_delta)
     return party_repo.set_party_current_balance(
         db,
         party,
-        abs(new_balance),
-        "Debit" if new_balance < 0 else "Credit",
+        amount,
+        direction,
     )
 
 
@@ -111,8 +108,10 @@ def get_parties(
     skip: int = 0,
     limit: int = 100,
     search: Optional[str] = None,
-) -> list[Party]:
-    return party_repo.list_parties(db, skip=skip, limit=limit, search=search)
+    party_type=None,
+    count_only: bool = False,
+) -> list[Party] | int:
+    return party_repo.list_parties(db, skip=skip, limit=limit, search=search, party_type=party_type, count_only=count_only)
 
 
 def get_party_by_id(db: Session, party_id: int) -> Party:
@@ -122,7 +121,9 @@ def get_party_by_id(db: Session, party_id: int) -> Party:
 def update_party_by_id(
     db: Session, party_id: int, party_data: PartyUpdate
 ) -> Party:
-    party = party_validation.validate_and_get_active_party(db, party_id=party_id)
+    party = party_repo.get_party_for_balance_update(db, party_id)
+    if party is None or not party.is_active:
+        raise HTTPException(status_code=404, detail="Party not found")
     update_data = party_data.model_dump(exclude_unset=True)
 
     if "gstin" in update_data:
@@ -152,9 +153,10 @@ def update_party_by_id(
     if new_opening is None or new_type is None:
         raise HTTPException(status_code=422, detail="Opening balance and balance type cannot be null")
     if (new_opening, new_type) != (party.opening_balance, party.balance_type):
-        old_signed = party.opening_balance if party.balance_type == "Credit" else -party.opening_balance
-        new_signed = new_opening if new_type == "Credit" else -new_opening
-        apply_party_balance_delta(db, party_id, new_signed - old_signed)
+        old_signed = signed_balance(party.opening_balance, party.balance_type)
+        new_signed = signed_balance(new_opening, new_type)
+        amount, direction = balance_after_delta(party.current_balance, party.current_balance_type, new_signed - old_signed)
+        update_data.update(current_balance=amount, current_balance_type=direction)
 
     updated_party = party_repo.update_party(db, party=party, data=update_data)
     db.commit()

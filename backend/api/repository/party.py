@@ -33,6 +33,13 @@ def get_party_by_id_any_status(db: Session, party_id: int) -> Party | None:
     return db.query(Party).filter(Party.id == party_id).first()
 
 
+def get_party_for_balance_update(db: Session, party_id: int) -> Party | None:
+    # Lock only this account until caller commit/rollback; refresh cached balances.
+    # NO KEY UPDATE is compatible with transaction-document foreign key checks.
+    return (db.query(Party).filter(Party.id == party_id)
+            .populate_existing().with_for_update(key_share=True).first())
+
+
 def get_party_by_gstin(
     db: Session,
     gstin: str,
@@ -52,8 +59,13 @@ def list_parties(
     skip: int = 0,
     limit: int = 100,
     search: str | None = None,
-) -> list[Party]:
+    party_type=None,
+    count_only: bool = False,
+) -> list[Party] | int:
     query = db.query(Party).filter(Party.is_active == True)
+
+    if party_type is not None:
+        query = query.filter(Party.party_type == party_type)
 
     if search:
         query = query.filter(
@@ -67,6 +79,9 @@ def list_parties(
                 Party.pan_card.ilike(f"%{search}%"),
             )
         )
+
+    if count_only:
+        return query.count()
 
     return (
         query
