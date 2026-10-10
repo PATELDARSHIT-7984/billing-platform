@@ -1,12 +1,15 @@
-import { useEffect, useState, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/common/PageHeader';
 import DataTable from '../components/common/DataTable';
 import ConfirmDialog from '../components/common/ConfirmDialog';
 import Badge from '../components/common/Badge';
 import PartyFormModal from './PartyFormModal';
 import { useToast } from '../context/ToastContext';
-import { fetchParties, createParty, updateParty, deleteParty } from '../services/partyService';
+import { ACCOUNT_TYPES, accountType, fetchAccounts, fetchAccountForEdit, saveAccount, deleteAccount } from '../services/accountService';
+import useHistoryPage from '../hooks/useHistoryPage';
+import Pagination from '../components/common/Pagination';
+import { FormSelect } from '../components/common/FormField';
 import { extractErrorMessage } from '../services/api';
 
 const COLUMNS = [
@@ -15,7 +18,7 @@ const COLUMNS = [
     key: 'party_type',
     label: 'Type',
     width: 110,
-    render: (row) => <Badge tone={row.party_type === 'Customer' ? 'green' : 'blue'}>{row.party_type}</Badge>,
+    render: (row) => <Badge tone={row.source === 'customer' ? 'green' : 'blue'}>{accountType(row.accountType).label}</Badge>,
   },
   { key: 'mobile', label: 'Mobile', render: (row) => row.mobile ? `${row.country_code || ''} ${row.mobile}`.trim() : '—' },
   {
@@ -32,18 +35,17 @@ const COLUMNS = [
   },
 ];
 
-export default function PartyManagement() {
+export default function PartyManagement({ legacyCustomer = false }) {
   const toast = useToast();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedType = accountType(legacyCustomer ? 'CUSTOMER' : searchParams.get('accountType')).value;
   // When arriving via a "+ Add Party" link from another page (e.g. Rojmel,
   // Purchase Entry), returnTo tells us where to send the user back to
   // after a successful save, with the new party's id attached.
   const returnTo = searchParams.get('returnTo');
   const shouldOpenAdd = searchParams.get('openAdd') === '1';
 
-  const [parties, setParties] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -55,25 +57,7 @@ export default function PartyManagement() {
   const [partyToDelete, setPartyToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
-  const loadParties = useCallback((searchTerm) => {
-    setLoading(true);
-    fetchParties({ search: searchTerm })
-      .then(setParties)
-      .catch((err) => toast.error(extractErrorMessage(err)))
-      .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Initial load
-  useEffect(() => {
-    loadParties('');
-  }, [loadParties]);
-
-  // Debounced search — refetches from the backend's `search` query param
-  useEffect(() => {
-    const timer = setTimeout(() => loadParties(search), 350);
-    return () => clearTimeout(timer);
-  }, [search, loadParties]);
+  const { items: parties, loading, reload: loadParties, pagination } = useHistoryPage(fetchAccounts, { accountType: selectedType, search });
 
   const openAddModal = () => {
     setModalMode('add');
@@ -88,25 +72,35 @@ export default function PartyManagement() {
   }, [shouldOpenAdd]);
 
   const openEditModal = (party) => {
-    setModalMode('edit');
-    setSelectedParty(party);
-    setModalOpen(true);
+    fetchAccountForEdit(party).then((full) => {
+      setModalMode('edit');
+      setSelectedParty(full);
+      setModalOpen(true);
+    }).catch((err) => toast.error(extractErrorMessage(err)));
   };
 
   const handleFormSubmit = (payload) => {
     setSubmitting(true);
-    const request = modalMode === 'edit'
-      ? updateParty(selectedParty.id, payload)
-      : createParty(payload);
+    const request = saveAccount(payload, modalMode === 'edit' ? selectedParty : null);
 
     request
       .then((savedParty) => {
-        toast.success(modalMode === 'edit' ? 'Party updated successfully.' : 'Party added successfully.');
+        toast.success(modalMode === 'edit' ? 'Account updated successfully.' : 'Account added successfully.');
         setModalOpen(false);
-        loadParties(search);
+        if (savedParty.accountType !== selectedType) {
+          setSearchParams((previous) => {
+            const next = new URLSearchParams(previous);
+            next.set('accountType', savedParty.accountType);
+            return next;
+          });
+        } else loadParties();
 
         if (modalMode === 'add' && returnTo) {
-          navigate(`${returnTo}?newPartyId=${savedParty.id}`);
+          const target = new URL(returnTo, window.location.origin);
+          if (target.origin === window.location.origin) {
+            target.searchParams.set(savedParty.source === 'customer' ? 'newCustomerId' : 'newPartyId', savedParty.id);
+            navigate(target.pathname + target.search);
+          }
         }
       })
       .catch((err) => toast.error(extractErrorMessage(err)))
@@ -120,27 +114,39 @@ export default function PartyManagement() {
 
   const confirmDelete = () => {
     setDeleting(true);
-    deleteParty(partyToDelete.id)
+    deleteAccount(partyToDelete)
       .then(() => {
         toast.success(`"${partyToDelete.name}" deleted successfully.`);
         setConfirmOpen(false);
         setPartyToDelete(null);
-        loadParties(search);
+        loadParties();
       })
       .catch((err) => toast.error(extractErrorMessage(err)))
       .finally(() => setDeleting(false));
   };
 
+  if (legacyCustomer) {
+    const params = new URLSearchParams(searchParams);
+    params.set('accountType', 'CUSTOMER');
+    return <Navigate replace to={`/parties?${params}`} />;
+  }
+
   return (
     <div className="page">
       <PageHeader
         title="Accounts"
-        subtitle="Manage suppliers and customers with opening balance"
+        subtitle="Manage customers, suppliers and purchase accounts with opening balance"
         searchValue={search}
         onSearchChange={setSearch}
-        searchPlaceholder="Search by name, mobile, city, GSTIN or PAN..."
+        searchPlaceholder={selectedType === 'CUSTOMER' ? 'Search by name, code or mobile...' : 'Search by name, mobile, city, GSTIN or PAN...'}
+        extraActions={<FormSelect label="Account Type" name="accountFilter" value={selectedType} options={ACCOUNT_TYPES}
+          onChange={(value) => setSearchParams((previous) => {
+            const next = new URLSearchParams(previous);
+            next.set('accountType', value);
+            return next;
+          })} />}
         onAddClick={openAddModal}
-        addLabel="Add Party"
+        addLabel="Add Account"
       />
 
       <DataTable
@@ -149,10 +155,14 @@ export default function PartyManagement() {
         loading={loading}
         onEdit={openEditModal}
         onDelete={askDelete}
-        emptyMessage={search ? `No parties match "${search}".` : 'No parties added yet. Click "Add Party" to create one.'}
+        emptyMessage={search ? `No accounts match "${search}".` : 'No accounts added yet. Click "Add Account" to create one.'}
       />
 
+      <Pagination {...pagination} />
+
       <PartyFormModal
+        unifiedAccounts
+        defaultType={selectedType}
         open={modalOpen}
         mode={modalMode}
         initialData={selectedParty}
@@ -163,7 +173,7 @@ export default function PartyManagement() {
 
       <ConfirmDialog
         open={confirmOpen}
-        title="Delete Party"
+        title="Delete Account"
         message={`Are you sure you want to delete "${partyToDelete?.name}"? This cannot be undone.`}
         loading={deleting}
         onCancel={() => setConfirmOpen(false)}

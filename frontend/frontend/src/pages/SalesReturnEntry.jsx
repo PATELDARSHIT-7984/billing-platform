@@ -1,3 +1,5 @@
+import AccountSelector from '../components/common/AccountSelector';
+import { fetchAccountRecord } from '../services/accountService';
 import { handleEnterNavigation } from '../utils/enterNavigation';
 import DoneBySelect from '../components/common/DoneBySelect';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -12,7 +14,6 @@ import {
   FormTextarea,
 } from '../components/common/FormField';
 import { useToast } from '../context/ToastContext';
-import { fetchCustomers, fetchCustomerById } from '../services/customerService';
 import { fetchItems } from '../services/itemService';
 import {
   createSalesReturn,
@@ -114,7 +115,6 @@ export default function SalesReturnEntry() {
   const loadedEditId = useRef(null);
   const DRAFT_KEY = 'sales-return-entry';
 
-  const [customers, setCustomers] = useState([]);
   const [itemRecords, setItemRecords] = useState([]);
   const [details, setDetails] = useState(createEmptyDetails);
   const [itemForm, setItemForm] = useState(createEmptyItem);
@@ -125,16 +125,11 @@ export default function SalesReturnEntry() {
   const [saving, setSaving] = useState(false);
   const [loadingSalesReturn, setLoadingSalesReturn] = useState(false);
 
-  const loadCustomers = () => fetchCustomers({ search: '' })
-    .then((data) => setCustomers(data.filter((customer) => customer.is_active !== false)))
-    .catch((error) => toast.error(extractErrorMessage(error)));
-
   const loadItems = () => fetchItems({ search: '' })
     .then((data) => setItemRecords(data.filter((item) => item.is_active !== false)))
     .catch((error) => toast.error(extractErrorMessage(error)));
 
   useEffect(() => {
-    loadCustomers();
     loadItems();
 
     const restoringDraft = !editId && Boolean(loadDraft(DRAFT_KEY));
@@ -164,14 +159,12 @@ export default function SalesReturnEntry() {
   }, []);
 
   useEffect(() => {
-    if (!newCustomerId || !customers.length) return;
-    const customer = customers.find((row) => Number(row.id) === Number(newCustomerId));
-    if (!customer) return;
-
-    fetchCustomerById(getCustomerId(customer))
+    if (!newCustomerId) return;
+    fetchAccountRecord('customer', newCustomerId)
       .then((full) => {
         setDetails((previous) => ({
           ...previous,
+          _account: full,
           customer_id: getCustomerId(full),
           address: full?.address || '',
           city: full?.city || '',
@@ -181,13 +174,12 @@ export default function SalesReturnEntry() {
         }));
       })
       .catch((error) => toast.error(extractErrorMessage(error)));
-  }, [newCustomerId, customers]);
+  }, [newCustomerId]);
 
 
   useEffect(() => {
     if (
       !editId
-      || !customers.length
       || !itemRecords.length
       || loadedEditId.current === editId
     ) return;
@@ -196,12 +188,11 @@ export default function SalesReturnEntry() {
     setLoadingSalesReturn(true);
 
     fetchSalesReturnById(editId)
-      .then((salesReturn) => {
-        const customer = customers.find(
-          (row) => Number(row.id) === Number(salesReturn.customer_id),
-        );
+      .then(async (salesReturn) => {
+        const customer = await fetchAccountRecord('customer', salesReturn.customer_id, salesReturn);
 
         setDetails({
+          _account: customer,
           customer_id: salesReturn.customer_id ?? null,
           return_no: salesReturn.return_no || '',
           order_no: salesReturn.order_no || '',
@@ -258,17 +249,7 @@ export default function SalesReturnEntry() {
         navigate('/sales-return-history');
       })
       .finally(() => setLoadingSalesReturn(false));
-  }, [editId, customers, itemRecords, navigate, toast]);
-
-  const customerOptions = useMemo(
-    () => customers.map((customer) => ({
-      value: getCustomerId(customer),
-      label: customer.customer_name || customer.name || 'Unnamed Customer',
-      meta: customer.city || customer.mobile || '',
-      record: customer,
-    })),
-    [customers],
-  );
+  }, [editId, itemRecords, navigate, toast]);
 
   const itemOptions = useMemo(
     () => itemRecords.map((item) => ({
@@ -306,6 +287,7 @@ export default function SalesReturnEntry() {
   const applySelectedCustomer = (customer) => {
     setDetails((previous) => ({
       ...previous,
+      _account: customer,
       customer_id: getCustomerId(customer),
       address: customer?.address || '',
       city: customer?.city || '',
@@ -339,12 +321,8 @@ export default function SalesReturnEntry() {
       return;
     }
 
-    fetchCustomerById(nextId)
-      .then((customer) => {
-        applySelectedCustomer(customer);
-        toast.success('Customer changed. Items and delivery details were cleared.');
-      })
-      .catch((error) => toast.error(extractErrorMessage(error)));
+    applySelectedCustomer(option.record);
+    toast.success('Customer changed. Items and delivery details were cleared.');
   };
 
   const selectItem = (option) => {
@@ -549,12 +527,9 @@ export default function SalesReturnEntry() {
       <Card title="Transaction Details" className="gt-card">
         <div className="gt-details-grid">
           <div className="gt-with-action">
-            <SearchableSelect
-              label="Customer"
-              options={customerOptions}
+            <AccountSelector domain="customer" record={details._account}
               value={details.customer_id}
               onChange={selectCustomer}
-              placeholder="Search customer..."
               required
               error={detailErrors.customer_id}
             />

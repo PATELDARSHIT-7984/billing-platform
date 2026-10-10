@@ -1,3 +1,5 @@
+import AccountSelector from '../../components/common/AccountSelector';
+import { fetchAccountRecord } from '../../services/accountService';
 import { handleEnterNavigation } from '../../utils/enterNavigation';
 import DoneBySelect from '../../components/common/DoneBySelect';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -13,7 +15,7 @@ import {
 } from '../../components/common/FormField';
 import PartyFormModal from '../PartyFormModal';
 import { useToast } from '../../context/ToastContext';
-import { fetchParties, createParty } from '../../services/partyService';
+import { createParty } from '../../services/partyService';
 import { fetchItems } from '../../services/itemService';
 import { createPurchaseReturn, fetchNextPurchaseReturnNumbers, fetchPurchaseReturnById, updatePurchaseReturn } from '../../services/purchaseReturnService';
 import { extractErrorMessage } from '../../services/api';
@@ -104,7 +106,6 @@ export default function PurchaseReturnEntry() {
   const editId = searchParams.get('edit');
   const loadedEditId = useRef(null);
 
-  const [parties, setParties] = useState([]);
   const [itemRecords, setItemRecords] = useState([]);
   const [details, setDetails] = useState(createEmptyDetails);
   const [itemForm, setItemForm] = useState(createEmptyItem);
@@ -117,12 +118,6 @@ export default function PurchaseReturnEntry() {
   const [saving, setSaving] = useState(false);
   const [loadingPurchase, setLoadingPurchase] = useState(false);
 
-  const loadParties = () => (
-    fetchParties({ search: '' })
-      .then((data) => setParties(data.filter((party) => party.party_type === 'Supplier')))
-      .catch((error) => toast.error(extractErrorMessage(error)))
-  );
-
   const loadItems = () => (
     fetchItems({ search: '' })
       .then((data) => setItemRecords(data.filter((item) => item.is_active !== false)))
@@ -130,7 +125,6 @@ export default function PurchaseReturnEntry() {
   );
 
   useEffect(() => {
-    loadParties();
     loadItems();
 
     if (!editId) {
@@ -149,14 +143,15 @@ export default function PurchaseReturnEntry() {
 
 
   useEffect(() => {
-    if (!editId || !parties.length || loadedEditId.current === editId) return;
+    if (!editId || loadedEditId.current === editId) return;
 
     setLoadingPurchase(true);
     fetchPurchaseReturnById(editId)
-      .then((purchaseReturn) => {
-        const selectedParty = parties.find((party) => party.id === purchaseReturn.party_id);
+      .then(async (purchaseReturn) => {
+        const selectedParty = await fetchAccountRecord('party', purchaseReturn.party_id, purchaseReturn);
 
         setDetails({
+          _account: selectedParty,
           party_id: purchaseReturn.party_id,
           return_no: purchaseReturn.return_no || '',
           order_no: purchaseReturn.order_no || '',
@@ -207,17 +202,7 @@ export default function PurchaseReturnEntry() {
         navigate('/purchase-return-history');
       })
       .finally(() => setLoadingPurchase(false));
-  }, [editId, parties, navigate, toast]);
-
-  const partyOptions = useMemo(
-    () => parties.map((party) => ({
-      value: party.id,
-      label: party.name,
-      meta: party.city || party.mobile || '',
-      record: party,
-    })),
-    [parties],
-  );
+  }, [editId, navigate, toast]);
 
   const itemOptions = useMemo(
     () => itemRecords.map((item) => ({
@@ -258,6 +243,7 @@ export default function PurchaseReturnEntry() {
   const applySelectedParty = (party) => {
     setDetails((previous) => ({
       ...previous,
+      _account: party,
       party_id: party?.id || null,
       address: party?.address || '',
       city: party?.city || '',
@@ -308,7 +294,6 @@ export default function PurchaseReturnEntry() {
 
     createParty({ ...payload, party_type: 'Supplier' })
       .then((created) => {
-        setParties((previous) => [...previous, created]);
         applySelectedParty(created);
         setPartyModalOpen(false);
         toast.success('Supplier added and selected. Items and delivery details were cleared.');
@@ -554,16 +539,12 @@ export default function PurchaseReturnEntry() {
       <Card title="Transaction Details" className="gt-card">
         <div className="gt-details-grid">
           <div className="gt-with-action">
-            <SearchableSelect
-              label="Supplier"
+            <AccountSelector domain="party" record={details._account}
               name="party_id"
-              options={partyOptions}
               value={details.party_id}
               onChange={selectParty}
-              placeholder="Search supplier..."
               required
               error={detailErrors.party_id}
-              emptyMessage="No supplier found. Use + to add one."
             />
             <button
               type="button"

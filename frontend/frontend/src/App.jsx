@@ -5,7 +5,6 @@ import MainLayout from './components/layout/MainLayout';
 
 import Dashboard from './pages/Dashboard';
 import PartyManagement from './pages/PartyManagement';
-import CustomerManagement from './pages/CustomerManagement';
 import ItemMaster from './pages/ItemMaster';
 import PurchaseEntry from './pages/Purchase/PurchaseEntry';
 import PurchaseHistory from './pages/PurchaseHistory';
@@ -32,7 +31,7 @@ export default function App() {
             <Route element={<MainLayout />}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/parties" element={<PartyManagement />} />
-              <Route path="/customers" element={<CustomerManagement />} />
+              <Route path="/customers" element={<PartyManagement legacyCustomer />} />
               <Route path="/items" element={<ItemMaster />} />
               <Route path="/purchase-entry" element={<PurchaseEntry />} />
               <Route path="/purchase-history" element={<PurchaseHistory />} />
