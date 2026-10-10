@@ -28,6 +28,7 @@ export default function RojmelManagement() {
   // Present when we've just been redirected back from "+ Add Party/Bank/
   // Done By" -- tells us which field to fill with the newly created id.
   const newPartyId = searchParams.get('newPartyId');
+  const newCustomerId = searchParams.get('newCustomerId');
   const newBankId = searchParams.get('newBankId');
   const newDoneById = searchParams.get('newDoneById');
 
@@ -97,14 +98,15 @@ export default function RojmelManagement() {
   // dropped into the right field -- so the user never has to retype the
   // rest of the receipt.
   useEffect(() => {
-    const newId = newPartyId || newBankId || newDoneById;
+    const newId = newPartyId || newCustomerId || newBankId || newDoneById;
     if (!newId) return;
 
     const draft = loadDraft(DRAFT_KEY);
     if (!draft) return;
 
     const form = { ...draft.form };
-    if (newPartyId) form.party_id = newPartyId;
+    if (newPartyId) { form.party_id = newPartyId; form.customer_id = ''; }
+    if (newCustomerId) { form.customer_id = newCustomerId; form.party_id = ''; }
     if (newBankId) form.cash_bank_id = newBankId;
     if (newDoneById) form.done_by_id = newDoneById;
 
@@ -114,14 +116,16 @@ export default function RojmelManagement() {
     setModalOpen(true);
     clearDraft(DRAFT_KEY);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [newPartyId, newBankId, newDoneById]);
+  }, [newPartyId, newCustomerId, newBankId, newDoneById]);
 
   // Saves the modal's current form plus enough context to reopen it
   // correctly (add vs. edit, and which receipt if editing), then sends
   // the user to the target entity's own entry page.
   const goAddRelated = (path, currentForm) => {
     saveDraft(DRAFT_KEY, { mode: modalMode, selectedRojmel, form: currentForm });
-    navigate(`${path}?openAdd=1&returnTo=/rojmel`);
+    const params = new URLSearchParams({ openAdd: '1', returnTo: '/rojmel' });
+    if (path === '/parties' && currentForm.accountType) params.set('accountType', currentForm.accountType);
+    navigate(`${path}?${params}`);
   };
 
   const handleAddParty = (currentForm) => goAddRelated('/parties', currentForm);
@@ -239,7 +243,6 @@ export default function RojmelManagement() {
         mode={modalMode}
         initialData={selectedRojmel}
         restoredForm={restoredForm}
-        parties={parties}
         banks={banks}
         doneByList={doneByList}
         submitting={submitting}

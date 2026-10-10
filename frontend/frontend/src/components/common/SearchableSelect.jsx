@@ -13,6 +13,8 @@ export default function SearchableSelect({
   disabled = false,
   allowCustom = false,
   emptyMessage = 'No matches found.',
+  onSearchChange,
+  selectedLabel,
 }) {
   const containerRef = useRef(null);
   const [inputText, setInputText] = useState('');
@@ -30,24 +32,26 @@ export default function SearchableSelect({
     [allOptions, value],
   );
 
+  const valueLabel = selectedLabel ?? selectedOption?.label ?? '';
+
   useEffect(() => {
-    setInputText(selectedOption?.label || '');
-  }, [selectedOption?.label]);
+    setInputText(valueLabel);
+  }, [valueLabel]);
 
   useEffect(() => {
     const handleOutside = (event) => {
       if (!containerRef.current?.contains(event.target)) {
-        setInputText(selectedOption?.label || '');
+        setInputText(valueLabel);
         setOpen(false);
       }
     };
 
     document.addEventListener('mousedown', handleOutside);
     return () => document.removeEventListener('mousedown', handleOutside);
-  }, [selectedOption?.label]);
+  }, [valueLabel]);
 
   const normalizedSearch = inputText.trim().toLowerCase();
-  const filtered = allOptions.filter((option) =>
+  const filtered = onSearchChange ? allOptions : allOptions.filter((option) =>
     String(option.label || '').toLowerCase().includes(normalizedSearch),
   );
 
@@ -91,7 +95,7 @@ export default function SearchableSelect({
 
   const handleKeyDown = (event) => {
     if (event.key === 'Escape') {
-      setInputText(selectedOption?.label || '');
+      setInputText(valueLabel);
       setOpen(false);
       return;
     }
@@ -159,6 +163,7 @@ export default function SearchableSelect({
           }}
           onChange={(event) => {
             setInputText(event.target.value);
+            onSearchChange?.(event.target.value);
             setOpen(true);
             setHighlighted(0);
           }}

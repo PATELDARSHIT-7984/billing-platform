@@ -1,14 +1,11 @@
+import { ACCOUNT_TYPES, accountType, buildAccountPayload } from '../services/accountService';
+import { validateCustomer } from '../utils/customerValidation';
 import { handleEnterNavigation } from '../utils/enterNavigation';
 import { useEffect, useState } from 'react';
 import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
 import { FormInput, FormSelect, FormTextarea, FormRow } from '../components/common/FormField';
 import './PartyFormModal.css';
-
-const PARTY_TYPE_OPTIONS = [
-  { value: 'Supplier', label: 'Supplier' },
-  { value: 'Customer', label: 'Customer' },
-];
 
 const COUNTRY_CODE_OPTIONS = [
   { value: '+91', label: '🇮🇳 +91' },
@@ -61,7 +58,7 @@ const STATE_OPTIONS = [
 
 const EMPTY_FORM = {
   name: '',
-  party_type: 'Supplier',
+  accountType: 'SUPPLIER',
   country_code: '+91',
   mobile: '',
   address: '',
@@ -79,7 +76,7 @@ function extractPanFromGstin(gstin) {
   return cleanGstin.length >= 12 ? cleanGstin.slice(2, 12) : '';
 }
 
-function validate(form) {
+function validate(form, unifiedAccounts) {
   const errors = {};
   const trimmedName = form.name.trim();
 
@@ -97,10 +94,18 @@ function validate(form) {
     errors.opening_balance = 'Opening balance must be a valid amount.';
   }
 
+  if (unifiedAccounts && form.accountType === 'CUSTOMER') {
+    const customerErrors = validateCustomer({ ...form, customer_name: form.name });
+    if (customerErrors.customer_name) {
+      customerErrors.name = customerErrors.customer_name;
+      delete customerErrors.customer_name;
+    }
+    Object.assign(errors, customerErrors);
+  }
   return errors;
 }
 
-export default function PartyFormModal({ open, mode = 'add', initialData = null, onClose, onSubmit, submitting }) {
+export default function PartyFormModal({ open, mode = 'add', initialData = null, defaultType = 'SUPPLIER', unifiedAccounts = false, onClose, onSubmit, submitting }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [errors, setErrors] = useState({});
 
@@ -109,7 +114,7 @@ export default function PartyFormModal({ open, mode = 'add', initialData = null,
     if (mode === 'edit' && initialData) {
       setForm({
         name: initialData.name || '',
-        party_type: initialData.party_type || 'Supplier',
+        accountType: initialData.accountType || (initialData.party_type === 'Customer' ? 'CUSTOMER' : 'SUPPLIER'),
         country_code: initialData.country_code || '+91',
         mobile: initialData.mobile || '',
         address: initialData.address || '',
@@ -122,10 +127,10 @@ export default function PartyFormModal({ open, mode = 'add', initialData = null,
         opening_remark: initialData.opening_remark || '',
       });
     } else {
-      setForm(EMPTY_FORM);
+      setForm({ ...EMPTY_FORM, accountType: defaultType });
     }
     setErrors({});
-  }, [open, mode, initialData]);
+  }, [open, mode, initialData, defaultType]);
 
   const setField = (field) => (value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -140,41 +145,29 @@ export default function PartyFormModal({ open, mode = 'add', initialData = null,
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    const validationErrors = validate(form);
+    const validationErrors = validate(form, unifiedAccounts);
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
       return;
     }
 
-    const payload = {
-      name: form.name.trim(),
-      party_type: form.party_type,
-      country_code: form.country_code || '+91',
-      mobile: form.mobile.trim() || null,
-      address: form.address.trim() || null,
-      city: form.city.trim() || null,
-      state: form.state || null,
-      gstin: form.gstin.trim() ? form.gstin.trim().toUpperCase() : null,
-      pan_card: form.pan_card.trim() ? form.pan_card.trim().toUpperCase() : null,
-      opening_balance: form.opening_balance === '' ? '0.00' : String(form.opening_balance),
-      balance_type: form.balance_type,
-      opening_remark: form.opening_remark.trim() || null,
-    };
-
-    onSubmit(payload);
+    // Transaction pages still consume the original Party payload; only Accounts opts in.
+    onSubmit(unifiedAccounts ? form : {
+      ...buildAccountPayload('SUPPLIER', form), party_type: accountType(form.accountType).label,
+    });
   };
 
   return (
     <Modal
       open={open}
-      title={mode === 'edit' ? 'Edit Party' : 'Add New Party'}
+      title={mode === 'edit' ? (unifiedAccounts ? 'Edit Account' : 'Edit Party') : (unifiedAccounts ? 'Add New Account' : 'Add New Party')}
       onClose={onClose}
       width={700}
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={submitting}>Cancel</Button>
           <Button variant="primary" onClick={handleSubmit} disabled={submitting}>
-            {submitting ? 'Saving...' : mode === 'edit' ? 'Save Changes' : 'Add Party'}
+            {submitting ? 'Saving...' : mode === 'edit' ? 'Save Changes' : (unifiedAccounts ? 'Add Account' : 'Add Party')}
           </Button>
         </>
       }
@@ -182,24 +175,24 @@ export default function PartyFormModal({ open, mode = 'add', initialData = null,
       <form data-enter-navigation onKeyDown={handleEnterNavigation} className="party-form" onSubmit={handleSubmit} noValidate>
         <FormRow>
           <FormInput label="Party Name" name="name" value={form.name} onChange={setField('name')} required error={errors.name} autoFocus />
-          <FormSelect label="Party Type" name="party_type" value={form.party_type} onChange={setField('party_type')} options={PARTY_TYPE_OPTIONS} required />
+          <FormSelect label={unifiedAccounts ? "Account Type" : "Party Type"} name="accountType" value={form.accountType} onChange={setField('accountType')} options={unifiedAccounts ? ACCOUNT_TYPES : ACCOUNT_TYPES.filter((type) => type.value !== 'PURCHASE_VENDOR').toReversed()} disabled={unifiedAccounts && mode === 'edit'} required />
         </FormRow>
 
         <div className="party-contact-row">
           <div className="party-country-code">
-            <FormSelect label="Country Code" name="country_code" value={form.country_code} onChange={setField('country_code')} options={COUNTRY_CODE_OPTIONS} required error={errors.country_code} />
+            <FormSelect label="Country Code" name="country_code" value={form.country_code} onChange={setField('country_code')} options={COUNTRY_CODE_OPTIONS} disabled={unifiedAccounts && form.accountType === 'CUSTOMER'} required error={errors.country_code} />
           </div>
           <div className="party-mobile-field">
-            <FormInput label="Mobile Number" name="mobile" value={form.mobile} onChange={setField('mobile')} placeholder="Enter mobile number" />
+            <FormInput label="Mobile Number" name="mobile" value={form.mobile} onChange={setField('mobile')} placeholder="Enter mobile number" required={unifiedAccounts && form.accountType === 'CUSTOMER'} error={errors.mobile} />
           </div>
         </div>
 
         <FormRow>
-          <FormInput label="City" name="city" value={form.city} onChange={setField('city')} placeholder="Enter city" />
+          <FormInput label="City" name="city" value={form.city} onChange={setField('city')} placeholder="Enter city" required={unifiedAccounts && form.accountType === 'CUSTOMER'} error={errors.city} />
           <FormSelect label="State" name="state" value={form.state} onChange={setField('state')} options={STATE_OPTIONS} required error={errors.state} />
         </FormRow>
 
-        <FormTextarea label="Address" name="address" value={form.address} onChange={setField('address')} rows={2} placeholder="Enter address" />
+        <FormTextarea label="Address" name="address" value={form.address} onChange={setField('address')} rows={2} placeholder="Enter address" required={unifiedAccounts && form.accountType === 'CUSTOMER'} error={errors.address} />
 
         <FormRow>
           <FormInput label="GSTIN" name="gstin" value={form.gstin} onChange={handleGstinChange} error={errors.gstin} maxLength={15} placeholder="15-character GSTIN" />

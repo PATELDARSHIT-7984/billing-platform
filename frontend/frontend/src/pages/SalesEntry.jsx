@@ -1,3 +1,5 @@
+import AccountSelector from '../components/common/AccountSelector';
+import { fetchAccountRecord } from '../services/accountService';
 import { handleEnterNavigation } from '../utils/enterNavigation';
 import DoneBySelect from '../components/common/DoneBySelect';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -12,7 +14,6 @@ import {
   FormTextarea,
 } from '../components/common/FormField';
 import { useToast } from '../context/ToastContext';
-import { fetchCustomers, fetchCustomerById } from '../services/customerService';
 import { fetchItems } from '../services/itemService';
 import {
   createBill,
@@ -105,7 +106,6 @@ export default function SalesEntry() {
   const editId = searchParams.get('edit');
   const loadedEditId = useRef(null);
 
-  const [customers, setCustomers] = useState([]);
   const [itemRecords, setItemRecords] = useState([]);
   const [details, setDetails] = useState(createEmptyDetails);
   const [itemForm, setItemForm] = useState(createEmptyItem);
@@ -116,16 +116,11 @@ export default function SalesEntry() {
   const [saving, setSaving] = useState(false);
   const [loadingSale, setLoadingSale] = useState(false);
 
-  const loadCustomers = () => fetchCustomers({ search: '' })
-    .then((data) => setCustomers(data.filter((customer) => customer.is_active !== false)))
-    .catch((error) => toast.error(extractErrorMessage(error)));
-
   const loadItems = () => fetchItems({ search: '' })
     .then((data) => setItemRecords(data.filter((item) => item.is_active !== false)))
     .catch((error) => toast.error(extractErrorMessage(error)));
 
   useEffect(() => {
-    loadCustomers();
     loadItems();
   }, []);
 
@@ -135,7 +130,6 @@ export default function SalesEntry() {
   useEffect(() => {
     if (
       !editId
-      || !customers.length
       || !itemRecords.length
       || loadedEditId.current === editId
     ) {
@@ -151,12 +145,11 @@ export default function SalesEntry() {
         const sale = detail.bill;
         const saleItems = detail.items || [];
 
-        const customer = customers.find(
-          (row) => Number(getCustomerId(row)) === Number(sale.customer_id),
-        );
+        const customer = await fetchAccountRecord('customer', sale.customer_id, sale);
 
         setDetails({
           _savedInvoice: { ...sale, lineIds: saleItems.map((row) => row.bill_item_id) },
+          _account: customer,
           customer_id: sale.customer_id ?? null,
           invoice_no: sale.invoice_no || '',
           order_no: sale.order_no || '',
@@ -212,17 +205,7 @@ export default function SalesEntry() {
     }
 
     loadSale();
-  }, [editId, customers, itemRecords, navigate, toast]);
-
-  const customerOptions = useMemo(
-    () => customers.map((customer) => ({
-      value: getCustomerId(customer),
-      label: customer.customer_name || customer.name || 'Unnamed Customer',
-      meta: customer.city || customer.mobile || '',
-      record: customer,
-    })),
-    [customers],
-  );
+  }, [editId, itemRecords, navigate, toast]);
 
   const itemOptions = useMemo(
     () => itemRecords.map((item) => ({
@@ -260,6 +243,7 @@ export default function SalesEntry() {
   const applySelectedCustomer = (customer) => {
     setDetails((previous) => ({
       ...previous,
+      _account: customer,
       customer_id: getCustomerId(customer),
       address: customer?.address || '',
       city: customer?.city || '',
@@ -293,12 +277,8 @@ export default function SalesEntry() {
       return;
     }
 
-    fetchCustomerById(nextId)
-      .then((customer) => {
-        applySelectedCustomer(customer);
-        toast.success('Customer changed. Items and delivery details were cleared.');
-      })
-      .catch((error) => toast.error(extractErrorMessage(error)));
+    applySelectedCustomer(option.record);
+    toast.success('Customer changed. Items and delivery details were cleared.');
   };
 
   const selectItem = (option) => {
@@ -481,12 +461,9 @@ export default function SalesEntry() {
       <Card title="Transaction Details" className="gt-card">
         <div className="gt-details-grid">
           <div className="gt-with-action">
-            <SearchableSelect
-              label="Customer"
-              options={customerOptions}
+            <AccountSelector domain="customer" record={details._account}
               value={details.customer_id}
               onChange={selectCustomer}
-              placeholder="Search customer..."
               required
               error={detailErrors.customer_id}
             />

@@ -5,9 +5,9 @@ const CUSTOMERS_ENDPOINT = '/customers/';
 
 // List is lean (no address/email/pincode/pan_card) -- Sales Entry's
 // auto-fill and the Edit modal both call fetchCustomerById() for the rest.
-export function fetchCustomers({ search = '' } = {}) {
+export function fetchCustomers({ search = '', page, pageSize = 20 } = {}) {
   return api
-    .get(CUSTOMERS_ENDPOINT, { params: { search: search || undefined, limit: 500 } })
+    .get(CUSTOMERS_ENDPOINT, { params: { search: search.trim() || undefined, page, page_size: page === undefined ? undefined : pageSize, limit: page === undefined ? 500 : undefined } })
     .then((res) => res.data);
 }
 

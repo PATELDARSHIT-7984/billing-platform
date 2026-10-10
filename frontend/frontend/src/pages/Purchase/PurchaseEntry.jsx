@@ -1,3 +1,5 @@
+import AccountSelector from '../../components/common/AccountSelector';
+import { fetchAccountRecord } from '../../services/accountService';
 import { handleEnterNavigation } from '../../utils/enterNavigation';
 import DoneBySelect from '../../components/common/DoneBySelect';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -16,7 +18,7 @@ import {
 import PartyFormModal from '../PartyFormModal';
 
 import { useToast } from '../../context/ToastContext';
-import { fetchParties, createParty } from '../../services/partyService';
+import { createParty } from '../../services/partyService';
 import { fetchItems } from '../../services/itemService';
 import {
   createPurchase,
@@ -146,6 +148,7 @@ function addDays(dateString, daysValue) {
 
 function mapPurchaseToDetails(purchase, selectedParty) {
   return {
+    _account: selectedParty,
     party_id: purchase.party_id,
     bill_no: purchase.bill_no || '',
     order_no: purchase.order_no || '',
@@ -313,7 +316,6 @@ export default function PurchaseEntry() {
   const editId = searchParams.get('edit');
   const loadedEditId = useRef(null);
 
-  const [parties, setParties] = useState([]);
   const [itemRecords, setItemRecords] = useState([]);
 
   const [details, setDetails] = useState(emptyDetails);
@@ -340,16 +342,6 @@ export default function PurchaseEntry() {
     [itemForm],
   );
 
-  const partyOptions = useMemo(
-    () => parties.map((party) => ({
-      value: party.id,
-      label: party.name,
-      meta: party.city || party.mobile || '',
-      record: party,
-    })),
-    [parties],
-  );
-
   const itemOptions = useMemo(
     () => itemRecords.map((item) => ({
       value: item.id,
@@ -366,16 +358,7 @@ export default function PurchaseEntry() {
   useEffect(() => {
     async function loadReferenceData() {
       try {
-        const [partyData, itemData] = await Promise.all([
-          fetchParties({ search: '' }),
-          fetchItems({ search: '' }),
-        ]);
-
-        setParties(
-          partyData.filter(
-            (party) => party.party_type === 'Supplier',
-          ),
-        );
+        const itemData = await fetchItems({ search: '' });
 
         setItemRecords(
           itemData.filter(
@@ -393,7 +376,6 @@ export default function PurchaseEntry() {
   useEffect(() => {
     if (
       !editId
-      || !parties.length
       || loadedEditId.current === editId
     ) {
       return;
@@ -405,9 +387,7 @@ export default function PurchaseEntry() {
       try {
         const purchase = await fetchPurchaseById(editId);
 
-        const selectedParty = parties.find(
-          (party) => party.id === purchase.party_id,
-        );
+        const selectedParty = await fetchAccountRecord('party', purchase.party_id, purchase);
 
         setDetails(
           mapPurchaseToDetails(
@@ -432,7 +412,7 @@ export default function PurchaseEntry() {
     }
 
     loadPurchase();
-  }, [editId, parties, navigate, toast]);
+  }, [editId, navigate, toast]);
 
   function clearItemForm() {
     setItemForm(emptyItem());
@@ -500,6 +480,7 @@ export default function PurchaseEntry() {
     setDetails((previous) => ({
       ...previous,
 
+      _account: party,
       party_id: party?.id || null,
       address: party?.address || '',
       city: party?.city || '',
@@ -559,11 +540,6 @@ export default function PurchaseEntry() {
         ...payload,
         party_type: 'Supplier',
       });
-
-      setParties((previous) => [
-        ...previous,
-        created,
-      ]);
 
       applySelectedParty(created);
       setPartyModalOpen(false);
@@ -790,16 +766,12 @@ export default function PurchaseEntry() {
       >
         <div className="gt-details-grid">
           <div className="gt-with-action">
-            <SearchableSelect
-              label="Supplier"
+            <AccountSelector domain="party" record={details._account}
               name="party_id"
-              options={partyOptions}
               value={details.party_id}
               onChange={selectParty}
-              placeholder="Search supplier..."
               required
               error={detailErrors.party_id}
-              emptyMessage="No supplier found. Use + to add one."
             />
 
             <button
