@@ -1,3 +1,4 @@
+import ManagedCreateButton from './ManagedCreateButton';
 import { useEffect, useState } from 'react';
 import SearchableSelect from './SearchableSelect';
 import { FormSelect } from './FormField';
@@ -6,7 +7,7 @@ import { extractErrorMessage } from '../../services/api';
 import './AccountSelector.css';
 
 export default function AccountSelector({ domain, source = domain || 'party', value, record, defaultType,
-  onChange, name = 'account', required = false, error = '', disabled = false }) {
+  onChange, name = 'account', required = false, error = '', disabled = false, onCreate }) {
   const types = accountTypesForSource(domain);
   const [type, setType] = useState(defaultType || (domain === 'customer' ? 'CUSTOMER' : 'SUPPLIER'));
   const [search, setSearch] = useState('');
@@ -16,7 +17,8 @@ export default function AccountSelector({ domain, source = domain || 'party', va
   const selected = value && String(record?.id) === String(value) ? normalizeAccountRecord(source, record)
     : value && resolved?.source === source && String(resolved?.id) === String(value) ? resolved : null;
   const selectedType = selected?.accountType;
-  const effectiveType = selectedType || (types.some((entry) => entry.value === type) ? type : types[0].value);
+  const preferredType = defaultType || type;
+  const effectiveType = selectedType || (types.some((entry) => entry.value === preferredType) ? preferredType : types[0].value);
   const key = JSON.stringify([effectiveType, search]);
   const initializing = Boolean(value && !selected && !lookupError);
 
@@ -48,7 +50,7 @@ export default function AccountSelector({ domain, source = domain || 'party', va
   // Historical legacy Party Customers are shown, never silently converted.
   const typeOptions = selected && !selectedType ? [{ value: 'legacy', label: selected.unavailable ? 'Saved Party' : 'Legacy Party' }, ...types] : types;
 
-  return <div className="account-selector">
+  const selector = <div className="account-selector">
     <FormSelect label="Account Type" name={`${name}_type`} options={typeOptions}
       value={selected && !selectedType ? 'legacy' : effectiveType} disabled={disabled || initializing}
       onChange={(next) => {
@@ -65,4 +67,7 @@ export default function AccountSelector({ domain, source = domain || 'party', va
         setResolved(option.record || null); onChange(option.value === '' ? null : option);
       }} />
   </div>;
+  return onCreate ? <div className="gt-with-action">{selector}
+    <ManagedCreateButton entity="account" disabled={disabled || initializing} onClick={() => onCreate(effectiveType)} />
+  </div> : selector;
 }

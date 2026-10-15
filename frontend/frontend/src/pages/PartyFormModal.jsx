@@ -105,7 +105,7 @@ function validate(form, unifiedAccounts) {
   return errors;
 }
 
-export default function PartyFormModal({ open, mode = 'add', initialData = null, defaultType = 'SUPPLIER', unifiedAccounts = false, onClose, onSubmit, submitting }) {
+export default function PartyFormModal({ open, mode = 'add', initialData = null, defaultType = 'SUPPLIER', unifiedAccounts = false, sourceRestriction, onClose, onSubmit, submitting }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [errors, setErrors] = useState({});
 
@@ -175,7 +175,7 @@ export default function PartyFormModal({ open, mode = 'add', initialData = null,
       <form data-enter-navigation onKeyDown={handleEnterNavigation} className="party-form" onSubmit={handleSubmit} noValidate>
         <FormRow>
           <FormInput label="Party Name" name="name" value={form.name} onChange={setField('name')} required error={errors.name} autoFocus />
-          <FormSelect label={unifiedAccounts ? "Account Type" : "Party Type"} name="accountType" value={form.accountType} onChange={setField('accountType')} options={unifiedAccounts ? ACCOUNT_TYPES : ACCOUNT_TYPES.filter((type) => type.value !== 'PURCHASE_VENDOR').toReversed()} disabled={unifiedAccounts && mode === 'edit'} required />
+          <FormSelect label={unifiedAccounts ? "Account Type" : "Party Type"} name="accountType" value={form.accountType} onChange={setField('accountType')} options={unifiedAccounts ? ACCOUNT_TYPES.filter((type) => !sourceRestriction || type.source === sourceRestriction) : ACCOUNT_TYPES.filter((type) => type.value !== 'PURCHASE_VENDOR').toReversed()} disabled={unifiedAccounts && mode === 'edit'} required />
         </FormRow>
 
         <div className="party-contact-row">

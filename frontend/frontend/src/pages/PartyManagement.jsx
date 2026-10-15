@@ -1,3 +1,5 @@
+import { safeOrigin } from '../utils/draftStorage';
+import { useManagedDestination } from '../hooks/useManagedCreate';
 import { useEffect, useState } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/common/PageHeader';
@@ -36,15 +38,16 @@ const COLUMNS = [
 ];
 
 export default function PartyManagement({ legacyCustomer = false }) {
+  const managedCreate = useManagedDestination('account');
   const toast = useToast();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const selectedType = accountType(legacyCustomer ? 'CUSTOMER' : searchParams.get('accountType')).value;
+  const selectedType = accountType(managedCreate.context.accountType || (legacyCustomer ? 'CUSTOMER' : searchParams.get('accountType'))).value;
   // When arriving via a "+ Add Party" link from another page (e.g. Rojmel,
   // Purchase Entry), returnTo tells us where to send the user back to
   // after a successful save, with the new party's id attached.
-  const returnTo = searchParams.get('returnTo');
-  const shouldOpenAdd = searchParams.get('openAdd') === '1';
+  const returnTo = safeOrigin(searchParams.get('returnTo')) ? searchParams.get('returnTo') : null;
+  const shouldOpenAdd = managedCreate.active || searchParams.get('openAdd') === '1';
 
   const [search, setSearch] = useState('');
 
@@ -86,6 +89,7 @@ export default function PartyManagement({ legacyCustomer = false }) {
     request
       .then((savedParty) => {
         toast.success(modalMode === 'edit' ? 'Account updated successfully.' : 'Account added successfully.');
+        if (modalMode === 'add' && managedCreate.finish(savedParty)) return;
         setModalOpen(false);
         if (savedParty.accountType !== selectedType) {
           setSearchParams((previous) => {
@@ -162,12 +166,13 @@ export default function PartyManagement({ legacyCustomer = false }) {
 
       <PartyFormModal
         unifiedAccounts
+        sourceRestriction={managedCreate.context.source}
         defaultType={selectedType}
         open={modalOpen}
         mode={modalMode}
         initialData={selectedParty}
         submitting={submitting}
-        onClose={() => setModalOpen(false)}
+        onClose={() => { if (!managedCreate.finish()) setModalOpen(false); }}
         onSubmit={handleFormSubmit}
       />
 
