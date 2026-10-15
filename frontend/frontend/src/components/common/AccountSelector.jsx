@@ -50,14 +50,14 @@ export default function AccountSelector({ domain, source = domain || 'party', va
   // Historical legacy Party Customers are shown, never silently converted.
   const typeOptions = selected && !selectedType ? [{ value: 'legacy', label: selected.unavailable ? 'Saved Party' : 'Legacy Party' }, ...types] : types;
 
-  const selector = <div className="account-selector">
+  return <div className="account-selector">
     <FormSelect label="Account Type" name={`${name}_type`} options={typeOptions}
       value={selected && !selectedType ? 'legacy' : effectiveType} disabled={disabled || initializing}
       onChange={(next) => {
         setType(next); setSearch(''); setResolved(null); setLookupError('');
         onChange(null, next);
       }} />
-    <SearchableSelect key={effectiveType} label={required ? 'Account' : 'Account (optional)'} name={name}
+    <SearchableSelect action={onCreate ? <ManagedCreateButton entity="account" disabled={disabled || initializing} onClick={() => onCreate(effectiveType)} /> : null} key={effectiveType} label={required ? 'Account' : 'Account (optional)'} name={name}
       value={value} selectedLabel={selected?.name || ''} options={required ? options : [{ value: '', label: 'None' }, ...options]}
       required={required} disabled={disabled || initializing} placeholder="Search accounts..."
       error={error || lookupError || (selected?.unavailable ? 'Saved account is unavailable for new selections.' : '') || (result.key === key ? result.error : '')}
@@ -67,7 +67,4 @@ export default function AccountSelector({ domain, source = domain || 'party', va
         setResolved(option.record || null); onChange(option.value === '' ? null : option);
       }} />
   </div>;
-  return onCreate ? <div className="gt-with-action">{selector}
-    <ManagedCreateButton entity="account" disabled={disabled || initializing} onClick={() => onCreate(effectiveType)} />
-  </div> : selector;
 }

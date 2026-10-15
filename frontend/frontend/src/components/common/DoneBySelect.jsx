@@ -19,8 +19,7 @@ export default function DoneBySelect({ value, savedValue, onChange, onCreate, cr
   }, []);
   const available = createdPerson ? [...people.filter((row) => row.id !== createdPerson.id), createdPerson] : people;
   const empty = !available.some((person) => person.is_active);
-  const selector = <FormSelect label="Done By" name="done_by" value={value} onChange={onChange}
+  return <FormSelect action={onCreate ? <ManagedCreateButton entity="doneBy" onClick={onCreate} /> : null} label="Done By" name="done_by" value={value} onChange={onChange}
     options={doneByOptions(available, savedValue)} disabled={loading || empty}
     error={error || (!loading && empty ? 'No active Done By available. Add one from Done By Management.' : '')} />;
-  return onCreate ? <div className="gt-with-action">{selector}<ManagedCreateButton entity="doneBy" onClick={onCreate} /></div> : selector;
 }

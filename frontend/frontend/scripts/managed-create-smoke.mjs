@@ -12,6 +12,7 @@ await new Promise((resolve) => { ws.onopen = resolve; });
 let sequence = 0;
 const pending = new Map();
 const requests = [];
+let emptyDoneBy = false;
 const send = (method, params = {}) => new Promise((resolve, reject) => {
   const id = ++sequence;
   pending.set(id, { resolve, reject });
@@ -45,6 +46,7 @@ ws.onmessage = async ({ data }) => {
       ? { items: [row], page: 1, total: 1, total_pages: 1, page_size: 20 } : [row];
     if (request.method === 'GET' && url.pathname.includes('item-master')) body = [{ id: 1, name: 'Tile', hsn_code: '1234', unit: 'Box', sale_price: 100, current_stock: 100 }];
     if (request.method === 'GET' && (url.pathname.includes('done-by') || url.pathname.includes('banks'))) body = [{ id: 1, name: 'Operator', is_active: true }];
+    if (emptyDoneBy && request.method === 'GET' && url.pathname.includes('done-by')) body = [];
     if (url.pathname === '/rojmel/') body = { items: [{ id: 55, receipt_no: 'R55', transaction_type: 'Dr Pay', party_id: 8, customer_id: null,
       amount: 100, cash_bank_id: 1, done_by_id: 1, pay_mode: 'Cash', given_taken_date: '2026-10-10', effective_date: '2026-10-10', net_amount: 100 }], total: 1, total_pages: 1, page: 1 };
     if (url.pathname.endsWith('/summary')) body = { total_received: 0, total_paid: 0, net_earning: 0 };
@@ -215,4 +217,28 @@ try {
   }
   const shot=await send('Page.captureScreenshot',{format:'png'});await writeFile(join(tmpdir(),'rojmel-managed-create.png'),Buffer.from(shot.data,'base64'));
   console.log('Rojmel account/bank/person creation and preserved form PASS');
+
+  // Compare each button with its control, not fixed page coordinates.
+  for (const path of ['/purchase-entry', '/sales-entry', '/purchase-return-entry', '/sales-return-entry', '/quotation-entry', '/rojmel']) {
+    for (emptyDoneBy of [false, true]) {
+      await send('Page.navigate', { url: origin + path }); await pause(1200); await evaluate(helpers);
+      if (path === '/rojmel') { await click('.page-header .btn--primary'); await pause(300); }
+      if (emptyDoneBy && path === '/rojmel') await click('.modal__footer .btn--primary');
+      if (emptyDoneBy) assert.ok(await evaluate(`Boolean(window.q('.form-field__error'))`), 'Real empty-list or validation message visible');
+      for (const width of [1440, 1366, 1024, 768, 390]) {
+        await send('Emulation.setDeviceMetricsOverride', { width, height: 1100, deviceScaleFactor: 1, mobile: false });
+        await pause(50);
+        const controls = await evaluate(`[...document.querySelectorAll('.gt-plus')].filter(b=>b.getClientRects().length).map(button=>{
+          const row=button.parentElement, control=row.querySelector('input,select');
+          const b=button.getBoundingClientRect(), c=control?.getBoundingClientRect(), r=row.getBoundingClientRect();
+          return {label:button.getAttribute('aria-label'),row:row.classList.contains('form-control-row'),
+            aligned:!!c && Math.abs(b.top-c.top)<1 && Math.abs(b.bottom-c.bottom)<1,
+            contained:b.right<=r.right+1 && c.left>=r.left-1, messageInside:!!row.querySelector('.form-field__error')};
+        })`);
+        assert.equal(controls.length, 3, `${path}: all managed controls present`);
+        assert.ok(controls.every(c=>c.row && c.aligned && c.contained && !c.messageInside), JSON.stringify({path,width,emptyDoneBy,controls}));
+      }
+    }
+    console.log(`${path}: control-row alignment with/without messages at five widths PASS`);
+  }
 } finally { await send('Fetch.disable'); ws.close(); }

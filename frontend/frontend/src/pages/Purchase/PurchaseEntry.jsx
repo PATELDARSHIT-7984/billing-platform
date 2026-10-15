@@ -881,8 +881,8 @@ export default function PurchaseEntry() {
         className="gt-card"
       >
         <div className="gt-item-top">
-          <div className="gt-with-action">
-            <SearchableSelect
+          <SearchableSelect
+            action={<ManagedCreateButton entity="item" onClick={() => managed.begin('item')} />}
             label="Item Name"
             name="item_name"
             options={itemOptions}
@@ -894,8 +894,6 @@ export default function PurchaseEntry() {
             allowCustom
             emptyMessage="No matching item found."
           />
-            <ManagedCreateButton entity="item" onClick={() => managed.begin('item')} />
-          </div>
 
           <FormInput
             label="HSN Code"

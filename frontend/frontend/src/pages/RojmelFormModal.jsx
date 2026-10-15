@@ -219,14 +219,8 @@ export default function RojmelFormModal({
               onChange={(selection, nextType) => setForm((previous) => ({ ...previous,
                 ...accountSelectionFields(selection), _account: selection?.record, accountType: selection?.accountType || nextType,
               }))} />
-          <div className="gt-with-action">
-            <FormSelect label="Cash / Bank" name="cash_bank_id" value={String(form.cash_bank_id)} onChange={setField('cash_bank_id')} options={bankOptions} required error={errors.cash_bank_id} />
-            <ManagedCreateButton entity="bank" onClick={() => onAddBank(form)} disabled={submitting} />
-          </div>
-          <div className="gt-with-action">
-            <FormSelect label="Done By" name="done_by_id" value={String(form.done_by_id)} onChange={setField('done_by_id')} options={doneByOptions} required error={errors.done_by_id} />
-            <ManagedCreateButton entity="doneBy" onClick={() => onAddDoneBy(form)} disabled={submitting} />
-          </div>
+          <FormSelect action={<ManagedCreateButton entity="bank" onClick={() => onAddBank(form)} disabled={submitting} />} label="Cash / Bank" name="cash_bank_id" value={String(form.cash_bank_id)} onChange={setField('cash_bank_id')} options={bankOptions} required error={errors.cash_bank_id} />
+          <FormSelect action={<ManagedCreateButton entity="doneBy" onClick={() => onAddDoneBy(form)} disabled={submitting} />} label="Done By" name="done_by_id" value={String(form.done_by_id)} onChange={setField('done_by_id')} options={doneByOptions} required error={errors.done_by_id} />
         </FormRow>
 
         <FormRow>

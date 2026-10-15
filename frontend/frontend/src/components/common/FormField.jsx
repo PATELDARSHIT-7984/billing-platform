@@ -1,4 +1,5 @@
 import './FormField.css';
+import FormControlRow from './FormControlRow';
 
 export function FormInput({
   label,
@@ -37,7 +38,7 @@ export function FormInput({
   );
 }
 
-export function FormSelect({ label, name, value, onChange, options, required = false, error = '', disabled = false }) {
+export function FormSelect({ label, name, value, onChange, options, required = false, error = '', disabled = false, action }) {
   return (
     <div className="form-field">
       {label && (
@@ -45,20 +46,22 @@ export function FormSelect({ label, name, value, onChange, options, required = f
           {label} {required && <span className="form-field__required">*</span>}
         </label>
       )}
-      <select
-        id={name}
-        name={name}
-        value={value ?? ''}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.value)}
-        className={`form-field__input form-field__select ${error ? 'form-field__input--error' : ''}`}
-      >
-        {options.map((opt) => (
-          <option key={opt.value} value={opt.value} disabled={opt.disabled}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
+      <FormControlRow action={action}>
+        <select
+          id={name}
+          name={name}
+          value={value ?? ''}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.value)}
+          className={`form-field__input form-field__select ${error ? 'form-field__input--error' : ''}`}
+        >
+          {options.map((opt) => (
+            <option key={opt.value} value={opt.value} disabled={opt.disabled}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </FormControlRow>
       {error && <span className="form-field__error">{error}</span>}
     </div>
   );
