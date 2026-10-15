@@ -1,3 +1,4 @@
+import ManagedCreateButton from '../components/common/ManagedCreateButton';
 import { handleEnterNavigation } from '../utils/enterNavigation';
 import AccountSelector from '../components/common/AccountSelector';
 import { accountSelectionFields } from '../services/accountService';
@@ -211,22 +212,20 @@ export default function RojmelFormModal({
         </FormRow>
 
         <FormRow>
-          <div className="gt-with-action">
-            <AccountSelector name="rojmel_account" domain={['Cr Pay', 'Dr Pay'].includes(form.transaction_type) ? undefined : 'party'}
+          <AccountSelector name="rojmel_account" domain={['Cr Pay', 'Dr Pay'].includes(form.transaction_type) ? undefined : 'party'}
               source={form.customer_id ? 'customer' : 'party'} value={form.customer_id || form.party_id}
-              defaultType={form.accountType} disabled={submitting}
+              defaultType={form.accountType} record={form._account} disabled={submitting}
+              onCreate={(accountType) => onAddParty({ ...form, accountType })}
               onChange={(selection, nextType) => setForm((previous) => ({ ...previous,
-                ...accountSelectionFields(selection), accountType: selection?.accountType || nextType,
+                ...accountSelectionFields(selection), _account: selection?.record, accountType: selection?.accountType || nextType,
               }))} />
-            <button type="button" className="gt-plus" onClick={() => onAddParty(form)} title="Add new party" aria-label="Add new party">+</button>
-          </div>
           <div className="gt-with-action">
             <FormSelect label="Cash / Bank" name="cash_bank_id" value={String(form.cash_bank_id)} onChange={setField('cash_bank_id')} options={bankOptions} required error={errors.cash_bank_id} />
-            <button type="button" className="gt-plus" onClick={() => onAddBank(form)} title="Add new bank" aria-label="Add new bank">+</button>
+            <ManagedCreateButton entity="bank" onClick={() => onAddBank(form)} disabled={submitting} />
           </div>
           <div className="gt-with-action">
             <FormSelect label="Done By" name="done_by_id" value={String(form.done_by_id)} onChange={setField('done_by_id')} options={doneByOptions} required error={errors.done_by_id} />
-            <button type="button" className="gt-plus" onClick={() => onAddDoneBy(form)} title="Add new person" aria-label="Add new person">+</button>
+            <ManagedCreateButton entity="doneBy" onClick={() => onAddDoneBy(form)} disabled={submitting} />
           </div>
         </FormRow>
 

@@ -1,3 +1,5 @@
+import { useManagedOrigin } from '../hooks/useManagedCreate';
+import ManagedCreateButton from '../components/common/ManagedCreateButton';
 import AccountSelector from '../components/common/AccountSelector';
 import { fetchAccountRecord } from '../services/accountService';
 import { handleEnterNavigation } from '../utils/enterNavigation';
@@ -22,7 +24,6 @@ import {
   updateSalesReturn,
 } from '../services/salesReturnService';
 import { extractErrorMessage } from '../services/api';
-import { saveDraft, loadDraft, clearDraft } from '../utils/draftStorage';
 import { UNIT_OPTIONS } from '../config/units';
 import {
   computeLineAmounts,
@@ -110,10 +111,8 @@ export default function SalesReturnEntry() {
   const toast = useToast();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const newCustomerId = searchParams.get('newCustomerId');
   const editId = searchParams.get('edit');
   const loadedEditId = useRef(null);
-  const DRAFT_KEY = 'sales-return-entry';
 
   const [itemRecords, setItemRecords] = useState([]);
   const [details, setDetails] = useState(createEmptyDetails);
@@ -125,6 +124,26 @@ export default function SalesReturnEntry() {
   const [saving, setSaving] = useState(false);
   const [loadingSalesReturn, setLoadingSalesReturn] = useState(false);
 
+  const managed = useManagedOrigin(
+    () => ({ details, items, itemForm, editingIndex, detailErrors, itemErrors }),
+    (draft) => {
+      setDetails(draft.details); setItems(draft.items); setItemForm(draft.itemForm);
+      setEditingIndex(draft.editingIndex); setDetailErrors(draft.detailErrors); setItemErrors(draft.itemErrors);
+      loadedEditId.current = editId;
+    },
+    (entity, record) => {
+      if (entity === 'item') {
+        setItemRecords((rows) => [...rows.filter((row) => row.id !== record.id), record]);
+        selectItem({ value: record.id, label: record.name, record });
+      } else if (entity === 'doneBy') {
+        setDetails((previous) => ({ ...previous, done_by: record.name, _doneBy: record }));
+      } else if (entity === 'account' && record.source === 'customer') {
+        // A create-and-return detour preserves entered contacts, lines and financial values.
+        setDetails((previous) => ({ ...previous, customer_id: record.id, _account: record, _accountType: record.accountType }));
+      }
+    },
+  );
+
   const loadItems = () => fetchItems({ search: '' })
     .then((data) => setItemRecords(data.filter((item) => item.is_active !== false)))
     .catch((error) => toast.error(extractErrorMessage(error)));
@@ -132,7 +151,7 @@ export default function SalesReturnEntry() {
   useEffect(() => {
     loadItems();
 
-    const restoringDraft = !editId && Boolean(loadDraft(DRAFT_KEY));
+    const restoringDraft = managed.restoring;
 
     if (!editId && !restoringDraft) {
       fetchNextSalesReturnNumbers()
@@ -149,37 +168,8 @@ export default function SalesReturnEntry() {
   }, [editId]);
 
   useEffect(() => {
-    if (editId) return;
-    const draft = loadDraft(DRAFT_KEY);
-    if (!draft) return;
-    setDetails(draft.details);
-    setItems(draft.items);
-    setItemForm(draft.itemForm);
-    clearDraft(DRAFT_KEY);
-  }, []);
-
-  useEffect(() => {
-    if (!newCustomerId) return;
-    fetchAccountRecord('customer', newCustomerId)
-      .then((full) => {
-        setDetails((previous) => ({
-          ...previous,
-          _account: full,
-          customer_id: getCustomerId(full),
-          address: full?.address || '',
-          city: full?.city || '',
-          customer_state: full?.state || '',
-          contact_no: full?.mobile || '',
-          email: full?.email || '',
-        }));
-      })
-      .catch((error) => toast.error(extractErrorMessage(error)));
-  }, [newCustomerId]);
-
-
-  useEffect(() => {
     if (
-      !editId
+      !editId || managed.restoring
       || !itemRecords.length
       || loadedEditId.current === editId
     ) return;
@@ -325,7 +315,7 @@ export default function SalesReturnEntry() {
     toast.success('Customer changed. Items and delivery details were cleared.');
   };
 
-  const selectItem = (option) => {
+  function selectItem(option) {
     if (!option) {
       setItemForm(createEmptyItem());
       return;
@@ -526,26 +516,14 @@ export default function SalesReturnEntry() {
 
       <Card title="Transaction Details" className="gt-card">
         <div className="gt-details-grid">
-          <div className="gt-with-action">
-            <AccountSelector domain="customer" record={details._account}
+          <AccountSelector domain="customer" record={details._account}
+              defaultType={details._accountType}
+              onCreate={(accountType) => managed.begin('account', { accountType, source: 'customer' })}
               value={details.customer_id}
-              onChange={selectCustomer}
+              onChange={(option, type) => { setDetails((previous) => ({ ...previous, _accountType: option?.accountType || type })); selectCustomer(option); }}
               required
               error={detailErrors.customer_id}
             />
-            <button
-              type="button"
-              className="gt-plus"
-              onClick={() => {
-                saveDraft(DRAFT_KEY, { details, items, itemForm });
-                navigate('/customers?openAdd=1&returnTo=/sales-return-entry');
-              }}
-              title="Add new customer"
-              aria-label="Add new customer"
-            >
-              +
-            </button>
-          </div>
 
           <FormInput label="Return No." value={details.return_no} disabled />
           <FormInput label="Order No." value={details.order_no} disabled />
@@ -591,6 +569,7 @@ export default function SalesReturnEntry() {
           <FormInput label="Contact No." value={details.contact_no} onChange={() => {}} disabled />
           <FormInput label="Email" value={details.email} onChange={() => {}} disabled />
           <DoneBySelect
+            onCreate={() => managed.begin('doneBy')} createdPerson={details._doneBy}
             label="Done By"
             value={details.done_by}
             onChange={(value) => changeDetail('done_by', value)}
@@ -620,7 +599,8 @@ export default function SalesReturnEntry() {
 
       <Card title="Item Entry" className="gt-card">
         <div className="gt-item-top">
-          <SearchableSelect
+          <div className="gt-with-action">
+            <SearchableSelect
             label="Item Name"
             options={itemOptions}
             value={itemForm.item_id}
@@ -630,6 +610,8 @@ export default function SalesReturnEntry() {
             error={itemErrors.item_name}
             emptyMessage="No active Item Master item found."
           />
+            <ManagedCreateButton entity="item" onClick={() => managed.begin('item')} />
+          </div>
           <FormInput label="HSN Code" value={itemForm.hsn_code} onChange={() => {}} disabled required />
           <FormSelect label="Unit" value={itemForm.unit} onChange={(value) => changeItem('unit', value)} options={UNIT_OPTIONS} />
         </div>

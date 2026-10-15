@@ -1,3 +1,5 @@
+import { safeOrigin } from '../utils/draftStorage';
+import { useManagedDestination } from '../hooks/useManagedCreate';
 import { handleEnterNavigation } from '../utils/enterNavigation';
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -25,11 +27,12 @@ const COLUMNS = [
 // Reached only via a "+" button next to a Done By dropdown (e.g. Rojmel) --
 // there is deliberately no sidebar entry for this page.
 export default function DoneByManagement() {
+  const managedCreate = useManagedDestination('doneBy');
   const toast = useToast();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const returnTo = searchParams.get('returnTo');
-  const shouldOpenAdd = searchParams.get('openAdd') === '1';
+  const returnTo = safeOrigin(searchParams.get('returnTo')) ? searchParams.get('returnTo') : null;
+  const shouldOpenAdd = managedCreate.active || searchParams.get('openAdd') === '1';
 
   const [people, setPeople] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -89,6 +92,7 @@ export default function DoneByManagement() {
     request
       .then((savedPerson) => {
         toast.success(modalMode === 'edit' ? 'Updated successfully.' : 'Added successfully.');
+        if (modalMode === 'add' && managedCreate.finish(savedPerson)) return;
         setModalOpen(false);
         loadPeople();
 
@@ -134,10 +138,10 @@ export default function DoneByManagement() {
       <Modal
         open={modalOpen}
         title={modalMode === 'edit' ? 'Edit Person' : 'Add Person'}
-        onClose={() => setModalOpen(false)}
+        onClose={() => { if (!managedCreate.finish()) setModalOpen(false); }}
         footer={
           <>
-            <Button variant="secondary" onClick={() => setModalOpen(false)} disabled={submitting}>Cancel</Button>
+            <Button variant="secondary" onClick={() => { if (!managedCreate.finish()) setModalOpen(false); }} disabled={submitting}>Cancel</Button>
             <Button variant="primary" onClick={handleFormSubmit} disabled={submitting}>
               {submitting ? 'Saving...' : 'Save'}
             </Button>

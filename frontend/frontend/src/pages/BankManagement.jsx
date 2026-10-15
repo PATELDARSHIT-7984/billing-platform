@@ -1,3 +1,5 @@
+import { safeOrigin } from '../utils/draftStorage';
+import { useManagedDestination } from '../hooks/useManagedCreate';
 import { handleEnterNavigation } from '../utils/enterNavigation';
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -25,11 +27,12 @@ const COLUMNS = [
 // Reached only via a "+" button next to a Bank dropdown (e.g. Rojmel) --
 // there is deliberately no sidebar entry for this page.
 export default function BankManagement() {
+  const managedCreate = useManagedDestination('bank');
   const toast = useToast();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const returnTo = searchParams.get('returnTo');
-  const shouldOpenAdd = searchParams.get('openAdd') === '1';
+  const returnTo = safeOrigin(searchParams.get('returnTo')) ? searchParams.get('returnTo') : null;
+  const shouldOpenAdd = managedCreate.active || searchParams.get('openAdd') === '1';
 
   const [banks, setBanks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -89,6 +92,7 @@ export default function BankManagement() {
     request
       .then((savedBank) => {
         toast.success(modalMode === 'edit' ? 'Bank updated successfully.' : 'Bank added successfully.');
+        if (modalMode === 'add' && managedCreate.finish(savedBank)) return;
         setModalOpen(false);
         loadBanks();
 
@@ -134,10 +138,10 @@ export default function BankManagement() {
       <Modal
         open={modalOpen}
         title={modalMode === 'edit' ? 'Edit Bank' : 'Add Bank'}
-        onClose={() => setModalOpen(false)}
+        onClose={() => { if (!managedCreate.finish()) setModalOpen(false); }}
         footer={
           <>
-            <Button variant="secondary" onClick={() => setModalOpen(false)} disabled={submitting}>Cancel</Button>
+            <Button variant="secondary" onClick={() => { if (!managedCreate.finish()) setModalOpen(false); }} disabled={submitting}>Cancel</Button>
             <Button variant="primary" onClick={handleFormSubmit} disabled={submitting}>
               {submitting ? 'Saving...' : 'Save'}
             </Button>

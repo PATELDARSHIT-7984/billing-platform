@@ -1,3 +1,5 @@
+import { useManagedOrigin } from '../hooks/useManagedCreate';
+import ManagedCreateButton from '../components/common/ManagedCreateButton';
 import AccountSelector from '../components/common/AccountSelector';
 import { fetchAccountRecord } from '../services/accountService';
 import { handleEnterNavigation } from '../utils/enterNavigation';
@@ -21,7 +23,6 @@ import {
   updateQuotation,
 } from '../services/quotationService';
 import { extractErrorMessage } from '../services/api';
-import { saveDraft, loadDraft, clearDraft } from '../utils/draftStorage';
 import { UNIT_OPTIONS } from '../config/units';
 import {
   computeLineAmounts,
@@ -107,11 +108,8 @@ export default function QuotationEntry() {
   const toast = useToast();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const newCustomerId = searchParams.get('newCustomerId');
-  const newItemId = searchParams.get('newItemId');
   const editId = searchParams.get('edit');
   const loadedEditId = useRef(null);
-  const DRAFT_KEY = 'quotation-entry';
 
   const [itemRecords, setItemRecords] = useState([]);
   const [details, setDetails] = useState(createEmptyDetails);
@@ -123,6 +121,26 @@ export default function QuotationEntry() {
   const [saving, setSaving] = useState(false);
   const [loadingQuotation, setLoadingQuotation] = useState(false);
 
+  const managed = useManagedOrigin(
+    () => ({ details, items, itemForm, editingIndex, detailErrors, itemErrors }),
+    (draft) => {
+      setDetails(draft.details); setItems(draft.items); setItemForm(draft.itemForm);
+      setEditingIndex(draft.editingIndex); setDetailErrors(draft.detailErrors); setItemErrors(draft.itemErrors);
+      loadedEditId.current = editId;
+    },
+    (entity, record) => {
+      if (entity === 'item') {
+        setItemRecords((rows) => [...rows.filter((row) => row.id !== record.id), record]);
+        selectItem({ value: record.id, label: record.name, record });
+      } else if (entity === 'doneBy') {
+        setDetails((previous) => ({ ...previous, done_by: record.name, _doneBy: record }));
+      } else if (entity === 'account' && record.source === 'customer') {
+        // A create-and-return detour preserves entered contacts, lines and financial values.
+        setDetails((previous) => ({ ...previous, customer_id: record.id, _account: record, _accountType: record.accountType }));
+      }
+    },
+  );
+
   const loadItems = () => fetchItems({ search: '' })
     .then((data) => setItemRecords(data.filter((item) => item.is_active !== false)))
     .catch((error) => toast.error(extractErrorMessage(error)));
@@ -133,55 +151,9 @@ export default function QuotationEntry() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Restores a draft saved right before a "+ Add Customer/Item" redirect,
-  // so returning here doesn't lose whatever was already filled in.
-  // Skipped in edit mode since that flow loads from the server instead.
-  useEffect(() => {
-    if (editId) return;
-    const draft = loadDraft(DRAFT_KEY);
-    if (!draft) return;
-    setDetails(draft.details);
-    setItems(draft.items);
-    setItemForm(draft.itemForm);
-    clearDraft(DRAFT_KEY);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Fills in the newly created customer's contact info onto the draft
-  // without wiping the items -- unlike selectCustomer(), this runs after
-  // returning from "+ Add Customer" and should continue the same quotation.
-  useEffect(() => {
-    if (!newCustomerId) return;
-    fetchAccountRecord('customer', newCustomerId)
-      .then((full) => {
-        setDetails((previous) => ({
-          ...previous,
-          _account: full,
-          customer_id: getCustomerId(full),
-          address: full?.address || '',
-          city: full?.city || '',
-          customer_state: full?.state || '',
-          contact_no: full?.mobile || '',
-          email: full?.email || '',
-        }));
-      })
-      .catch((error) => toast.error(extractErrorMessage(error)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [newCustomerId]);
-
-  // Fills the item entry form with the newly created item -- the user
-  // still picks quantity/price and clicks "Add" like any other item.
-  useEffect(() => {
-    if (!newItemId || !itemRecords.length) return;
-    const item = itemRecords.find((row) => Number(getItemId(row)) === Number(newItemId));
-    if (!item) return;
-    selectItem({ value: getItemId(item), record: item });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [newItemId, itemRecords]);
-
   useEffect(() => {
     if (
-      !editId
+      !editId || managed.restoring
       || !itemRecords.length
       || loadedEditId.current === editId
     ) return;
@@ -355,7 +327,7 @@ export default function QuotationEntry() {
     toast.success('Customer changed. Items and delivery details were cleared.');
   };
 
-  const selectItem = (option) => {
+  function selectItem(option) {
     if (!option) {
       setItemForm(createEmptyItem());
       return;
@@ -539,26 +511,14 @@ export default function QuotationEntry() {
 
       <Card title="Transaction Details" className="gt-card">
         <div className="gt-details-grid">
-          <div className="gt-with-action">
-            <AccountSelector domain="customer" record={details._account}
+          <AccountSelector domain="customer" record={details._account}
+              defaultType={details._accountType}
+              onCreate={(accountType) => managed.begin('account', { accountType, source: 'customer' })}
               value={details.customer_id}
-              onChange={selectCustomer}
+              onChange={(option, type) => { setDetails((previous) => ({ ...previous, _accountType: option?.accountType || type })); selectCustomer(option); }}
               required
               error={detailErrors.customer_id}
             />
-            <button
-              type="button"
-              className="gt-plus"
-              onClick={() => {
-                saveDraft(DRAFT_KEY, { details, items, itemForm });
-                navigate('/customers?openAdd=1&returnTo=/quotation-entry');
-              }}
-              title="Add new customer"
-              aria-label="Add new customer"
-            >
-              +
-            </button>
-          </div>
 
           <FormInput label="Quotation No." value={details.quotation_no} placeholder="Generated automatically" disabled />
           <FormInput label="Order No." value={details.order_no} placeholder="Generated automatically" disabled />
@@ -590,6 +550,7 @@ export default function QuotationEntry() {
           <FormInput label="Contact No." value={details.contact_no} onChange={() => {}} disabled />
           <FormInput label="Email" value={details.email} onChange={() => {}} disabled />
           <DoneBySelect
+            onCreate={() => managed.begin('doneBy')} createdPerson={details._doneBy}
             label="Done By"
             value={details.done_by}
             onChange={(value) => changeDetail('done_by', value)}
@@ -629,18 +590,7 @@ export default function QuotationEntry() {
               required
               error={itemErrors.item_name}
             />
-            <button
-              type="button"
-              className="gt-plus"
-              onClick={() => {
-                saveDraft(DRAFT_KEY, { details, items, itemForm });
-                navigate('/item-master?openAdd=1&returnTo=/quotation-entry');
-              }}
-              title="Add new item"
-              aria-label="Add new item"
-            >
-              +
-            </button>
+            <ManagedCreateButton entity="item" onClick={() => managed.begin('item')} />
           </div>
           <FormInput label="HSN Code" value={itemForm.hsn_code} onChange={() => {}} disabled required />
           <FormSelect

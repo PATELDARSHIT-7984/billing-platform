@@ -162,30 +162,8 @@ try {
   assert.equal(requests.filter((r) => r.method === 'GET').length, 1);
   console.log('Legacy route, sidebar, modal geometry and Enter navigation PASS');
 
-  // Existing transaction callers must retain their old Party payload and options.
-  for (const route of ['/purchase-entry', '/purchase-return-entry']) {
-    await send('Page.navigate', { url: origin + route });
-    await pause(1200);
-    await click('[aria-label="Add new supplier"]');
-    assert.equal(await evaluate('document.querySelector(".modal__title").textContent'), 'Add New Party');
-    assert.deepEqual(await evaluate('[...document.querySelectorAll("#accountType option")].map(e=>e.textContent)'), ['Supplier', 'Customer']);
-    await set('.party-form #name', 'Legacy supplier');
-    await set('.party-form #state', 'Gujarat');
-    await set('.party-form #opening_balance', '321.50');
-    await click('.modal__footer .btn--primary');
-    await pause();
-    const saved = lastWrite();
-    assert.equal(saved.method, 'POST');
-    assert.equal(saved.url.pathname, '/parties/');
-    const payload = JSON.parse(saved.postData);
-    assert.equal(payload.name, 'Legacy supplier');
-    assert.equal(payload.party_type, 'Supplier');
-    assert.equal(payload.opening_balance, '321.50');
-    assert.equal(payload.country_code, '+91');
-    assert.equal('accountType' in payload, false);
-    assert.equal(await evaluate('document.querySelector(".party-form") === null'), true);
-    console.log(`${route}: original embedded Party modal and payload PASS`);
-  }
+  // Transaction create-and-return is covered by managed-create-smoke.mjs.
+
 } finally {
   await send('Fetch.disable');
   ws.close();
