@@ -552,8 +552,8 @@ export default function SalesEntry() {
 
       <Card title="Item Entry" className="gt-card">
         <div className="gt-item-top">
-          <div className="gt-with-action">
-            <SearchableSelect
+          <SearchableSelect
+            action={<ManagedCreateButton entity="item" onClick={() => managed.begin('item')} />}
             label="Item Name"
             options={itemOptions}
             value={itemForm.item_id}
@@ -563,8 +563,6 @@ export default function SalesEntry() {
             error={itemErrors.item_name}
             emptyMessage="No item found in Item Master."
           />
-            <ManagedCreateButton entity="item" onClick={() => managed.begin('item')} />
-          </div>
           <FormInput label="HSN Code" value={itemForm.hsn_code} onChange={() => {}} disabled required />
           <FormSelect label="Unit" value={itemForm.unit} onChange={(value) => changeItem('unit', value)} options={UNIT_OPTIONS} />
         </div>

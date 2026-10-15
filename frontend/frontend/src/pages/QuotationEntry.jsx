@@ -580,8 +580,8 @@ export default function QuotationEntry() {
 
       <Card title="Item Entry" className="gt-card">
         <div className="gt-item-top">
-          <div className="gt-with-action">
-            <SearchableSelect
+          <SearchableSelect
+            action={<ManagedCreateButton entity="item" onClick={() => managed.begin('item')} />}
               label="Item Name"
               options={itemOptions}
               value={itemForm.item_id}
@@ -590,8 +590,6 @@ export default function QuotationEntry() {
               required
               error={itemErrors.item_name}
             />
-            <ManagedCreateButton entity="item" onClick={() => managed.begin('item')} />
-          </div>
           <FormInput label="HSN Code" value={itemForm.hsn_code} onChange={() => {}} disabled required />
           <FormSelect
             label="Unit"

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import './SearchableSelect.css';
+import FormControlRow from './FormControlRow';
 
 export default function SearchableSelect({
   label,
@@ -15,6 +16,7 @@ export default function SearchableSelect({
   emptyMessage = 'No matches found.',
   onSearchChange,
   selectedLabel,
+  action,
 }) {
   const containerRef = useRef(null);
   const [inputText, setInputText] = useState('');
@@ -149,73 +151,76 @@ export default function SearchableSelect({
         </label>
       )}
 
-      <div className="searchable-select__control">
-        <input
-          id={name}
-          type="text"
-          className={`form-field__input ${error ? 'form-field__input--error' : ''}`}
-          value={inputText}
-          placeholder={placeholder}
-          disabled={disabled}
-          onFocus={() => {
-            setOpen(true);
-            setHighlighted(0);
-          }}
-          onChange={(event) => {
-            setInputText(event.target.value);
-            onSearchChange?.(event.target.value);
-            setOpen(true);
-            setHighlighted(0);
-          }}
-          onKeyDown={handleKeyDown}
-          autoComplete="off"
-        />
+      <FormControlRow action={action}>
+        <div className="searchable-select__control">
+          <input
+            id={name}
+            type="text"
+            className={`form-field__input ${error ? 'form-field__input--error' : ''}`}
+            value={inputText}
+            placeholder={placeholder}
+            disabled={disabled}
+            onFocus={() => {
+              setOpen(true);
+              setHighlighted(0);
+            }}
+            onChange={(event) => {
+              setInputText(event.target.value);
+              onSearchChange?.(event.target.value);
+              setOpen(true);
+              setHighlighted(0);
+            }}
+            onKeyDown={handleKeyDown}
+            autoComplete="off"
+          />
 
-        <button
-          type="button"
-          className="searchable-select__chevron"
-          aria-label="Toggle options"
-          disabled={disabled}
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => setOpen((current) => !current)}
-        >
-          ▾
-        </button>
+          <button
+            type="button"
+            className="searchable-select__chevron"
+            aria-label="Toggle options"
+            disabled={disabled}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => setOpen((current) => !current)}
+          >
+            ▾
+          </button>
 
-        {open && !disabled && (
-          <div className="searchable-select__menu">
-            {!filtered.length && (
-              <div className="searchable-select__empty">
-                {allowCustom && inputText.trim()
-                  ? `Press Enter to use "${inputText.trim()}"`
-                  : emptyMessage}
-              </div>
-            )}
+          {open && !disabled && (
+            <div className="searchable-select__menu">
+              {!filtered.length && (
+                <div className="searchable-select__empty">
+                  {allowCustom && inputText.trim()
+                    ? `Press Enter to use "${inputText.trim()}"`
+                    : emptyMessage}
+                </div>
+              )}
 
-            {filtered.map((option, index) => (
-              <button
-                type="button"
-                key={`${option.value}-${index}`}
-                className={`searchable-select__option ${
-                  index === highlighted ? 'searchable-select__option--highlighted' : ''
-                } ${
-                  String(option.value) === String(value)
-                    ? 'searchable-select__option--selected'
-                    : ''
-                }`}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => selectOption(option)}
-                onMouseEnter={() => setHighlighted(index)}
-              >
-                <span>{option.label}</span>
-                {option.meta && (
-                  <span className="searchable-select__option-meta">{option.meta}</span>
-                )}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+              {filtered.map((option, index) => (
+                <button
+                  type="button"
+                  key={`${option.value}-${index}`}
+                  className={`searchable-select__option ${
+                    index === highlighted ? 'searchable-select__option--highlighted' : ''
+                  } ${
+                    String(option.value) === String(value)
+                      ? 'searchable-select__option--selected'
+                      : ''
+                  }`}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => selectOption(option)}
+                  onMouseEnter={() => setHighlighted(index)}
+                >
+                  <span>{option.label}</span>
+                  {option.meta && (
+                    <span className="searchable-select__option-meta">{option.meta}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+      </FormControlRow>
 
       {error && <span className="form-field__error">{error}</span>}
     </div>

@@ -1,0 +1,34 @@
+.form-control-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: stretch;
+  min-width: 0;
+}
+.form-control-row > :first-child { min-width: 0; }
+.form-control-row .form-field__input { display: block; }
+
+.gt-plus {
+  width: 38px;
+  height: auto;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #1557c8;
+  border-radius: 8px;
+  background: #1760db;
+  color: #fff;
+  font-size: 23px;
+  font-weight: 400;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 4px 10px rgba(23, 96, 219, 0.18);
+  transition: background-color .18s ease, box-shadow .18s ease;
+}
+
+.gt-plus:hover {
+  background: #104db7;
+  box-shadow: 0 6px 14px rgba(23, 96, 219, 0.24);
+}
+

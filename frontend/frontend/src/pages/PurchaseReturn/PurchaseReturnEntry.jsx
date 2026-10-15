@@ -679,8 +679,8 @@ export default function PurchaseReturnEntry() {
         className="gt-card"
       >
         <div className="gt-item-top">
-          <div className="gt-with-action">
-            <SearchableSelect
+          <SearchableSelect
+            action={<ManagedCreateButton entity="item" onClick={() => managed.begin('item')} />}
               label="Item Name"
               name="item_name"
               options={itemOptions}
@@ -691,8 +691,6 @@ export default function PurchaseReturnEntry() {
               error={itemErrors.item_name}
               emptyMessage="No active item found."
             />
-            <ManagedCreateButton entity="item" onClick={() => managed.begin('item')} />
-          </div>
 
           <FormInput
             label="HSN Code"
