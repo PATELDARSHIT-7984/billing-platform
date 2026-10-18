@@ -1,5 +1,6 @@
 from fastapi import HTTPException, status
 
+from api.services.gstin_identity import validate_available
 from api.repository import party as party_repository
 
 
@@ -11,9 +12,4 @@ def validate_and_get_active_party(db, party_id: int):
 
 
 def validate_gstin_is_unique(db, gstin: str, exclude_id: int | None = None) -> None:
-    if not gstin:
-        return
-
-    existing_gstin = party_repository.get_party_by_gstin(db, gstin, exclude_id=exclude_id)
-    if existing_gstin:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="GSTIN already exists")
+    validate_available(db, gstin, "party", exclude_id)

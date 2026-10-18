@@ -1,6 +1,8 @@
 from typing import Optional
 from decimal import Decimal, ROUND_HALF_UP
 from fastapi import HTTPException
+from api.services.gstin_identity import save_account
+from api.utils.gstin import normalize_gstin
 from api.utils.account_balance import signed_balance, balance_after_delta
 from sqlalchemy.orm import Session
 
@@ -26,7 +28,7 @@ def _generate_customer_code(db: Session) -> str:
 
 def _normalize_and_extract_pan(gstin: str | None, pan_card: str | None) -> tuple[str | None, str | None]:
     """Cleans GSTIN and PAN strings and derives PAN from GSTIN if missing."""
-    clean_gstin = gstin.strip().upper() if gstin else None
+    clean_gstin = normalize_gstin(gstin)
     clean_pan = pan_card.strip().upper() if pan_card else None
 
     if clean_gstin and not clean_pan and len(clean_gstin) == 15:
@@ -73,10 +75,7 @@ def create_customer(db: Session, customer_data):
         "is_active": True,
     }
 
-    new_customer = customer_repo.create_customer(db, data=customer_payload)
-    db.commit()
-    db.refresh(new_customer)
-    return new_customer
+    return save_account(db, "customer", lambda: customer_repo.create_customer(db, data=customer_payload))
 
 
 def get_all_customers(
@@ -132,10 +131,7 @@ def update_customer(db: Session, customer_id: int, customer_data):
     if customer_data.is_active is not None:
         update_payload["is_active"] = customer_data.is_active
 
-    updated_customer = customer_repo.update_customer(db, customer=customer, data=update_payload)
-    db.commit()
-    db.refresh(updated_customer)
-    return updated_customer
+    return save_account(db, "customer", lambda: customer_repo.update_customer(db, customer=customer, data=update_payload))
 
 
 def delete_customer(db: Session, customer_id: int):
