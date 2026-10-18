@@ -12,6 +12,8 @@ from sqlalchemy.engine import make_url
 
 from api.config.database import DATABASE_URL
 from api.model.bill import Bill
+from api.model.bill_item import BillItem  # Register Bill's relationship for subset runs.
+from api.model.item_master import ItemMaster  # Referenced by BillItem/SalesReturnItem.
 from api.model.sales_return import SalesReturn
 
 
@@ -83,7 +85,7 @@ def test_customer_accounting_postgresql_migration():
         migrate('downgrade', 'b8f2d9a73106', succeeds=False)
         assert balances() == [(4500, 'Debit'), (0, 'Credit')]
         with engine.begin() as conn:
-            assert conn.execute(text('SELECT version_num FROM alembic_version')).scalar_one() == 'c4a9e7120d35'
+            assert conn.execute(text('SELECT version_num FROM alembic_version')).scalar_one() == 'f2b61d9a430c'
             conn.execute(text("DELETE FROM rojmel WHERE receipt_no='Guard'"))
         migrate('downgrade', '7414692a3849')
         migrate('upgrade', 'head')

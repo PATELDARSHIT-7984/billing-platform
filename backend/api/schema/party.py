@@ -3,6 +3,7 @@ from decimal import Decimal
 from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
+from api.utils.gstin import normalize_gstin
 from api.schema.party_type import PartyType
 from api.utils.account_balance import BalanceType
 
@@ -38,11 +39,7 @@ class PartyCreate(BaseModel):
     @field_validator("gstin")
     @classmethod
     def validate_gstin(cls, value):
-        if value:
-            value = value.strip().upper()
-            if len(value) != 15:
-                raise ValueError("GSTIN must be exactly 15 characters")
-        return value or None
+        return normalize_gstin(value)
 
     @field_validator("pan_card")
     @classmethod
@@ -92,11 +89,7 @@ class PartyUpdate(BaseModel):
     @field_validator("gstin")
     @classmethod
     def validate_gstin(cls, value):
-        if value:
-            value = value.strip().upper()
-            if len(value) != 15:
-                raise ValueError("GSTIN must be exactly 15 characters")
-        return value or None
+        return normalize_gstin(value)
 
     @field_validator("pan_card")
     @classmethod

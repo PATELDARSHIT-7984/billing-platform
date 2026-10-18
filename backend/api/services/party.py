@@ -3,6 +3,8 @@ from typing import Optional
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from api.services.gstin_identity import save_account
+from api.utils.gstin import normalize_gstin
 from api.model.party import Party
 from api.utils.account_balance import signed_balance, balance_after_delta
 from api.repository import party as party_repo
@@ -30,16 +32,12 @@ def _clean_text(value) -> str | None:
     return value.strip() if isinstance(value, str) and value.strip() else None
 
 
-def _normalize_gstin(value) -> str | None:
-    return value.strip().upper() if value else None
-
-
 def _normalize_pan(value) -> str | None:
     return value.strip().upper() if value else None
 
 
 def _pan_from_gstin(gstin: str | None) -> str | None:
-    clean_gstin = _normalize_gstin(gstin)
+    clean_gstin = normalize_gstin(gstin)
     return clean_gstin[2:12] if clean_gstin and len(clean_gstin) >= 12 else None
 
 
@@ -67,7 +65,7 @@ def apply_party_balance_delta(
 
 
 def create_party(db: Session, data: PartyCreate) -> Party:
-    gstin = _normalize_gstin(data.gstin)
+    gstin = normalize_gstin(data.gstin)
     pan_card = _normalize_pan(data.pan_card)
 
     if gstin and not pan_card:
@@ -97,10 +95,7 @@ def create_party(db: Session, data: PartyCreate) -> Party:
         "is_active": True,
     }
 
-    new_party = party_repo.create_party(db, data=party_payload)
-    db.commit()
-    db.refresh(new_party)
-    return new_party
+    return save_account(db, "party", lambda: party_repo.create_party(db, data=party_payload))
 
 
 def get_parties(
@@ -127,7 +122,7 @@ def update_party_by_id(
     update_data = party_data.model_dump(exclude_unset=True)
 
     if "gstin" in update_data:
-        update_data["gstin"] = _normalize_gstin(update_data.get("gstin"))
+        update_data["gstin"] = normalize_gstin(update_data.get("gstin"))
         if update_data["gstin"]:
             party_validation.validate_gstin_is_unique(
                 db, gstin=update_data["gstin"], exclude_id=party_id
@@ -158,10 +153,7 @@ def update_party_by_id(
         amount, direction = balance_after_delta(party.current_balance, party.current_balance_type, new_signed - old_signed)
         update_data.update(current_balance=amount, current_balance_type=direction)
 
-    updated_party = party_repo.update_party(db, party=party, data=update_data)
-    db.commit()
-    db.refresh(updated_party)
-    return updated_party
+    return save_account(db, "party", lambda: party_repo.update_party(db, party=party, data=update_data))
 
 
 def delete_party_by_id(db: Session, party_id: int):

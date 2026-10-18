@@ -3,6 +3,7 @@ from typing import Optional
 from datetime import datetime
 import re
 from decimal import Decimal
+from api.utils.gstin import normalize_gstin
 from api.utils.account_balance import BalanceType
 
 
@@ -35,14 +36,7 @@ class CustomerCreate(BaseModel):
 
     @field_validator("gstin")
     def validate_gstin(cls, v):
-        if v is None:
-            return v
-
-        v = v.strip().upper()
-        if not re.fullmatch(r"\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}Z[A-Z\d]{1}", v.upper()):
-            raise ValueError("Invalid GSTIN")
-
-        return v.upper()
+        return normalize_gstin(v)
 
     @field_validator('pan_card')
     def validate_pan(cls, v):
