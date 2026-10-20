@@ -35,7 +35,7 @@ def test_additive_migration_and_round_trip(postgres_database):
             return values
 
     before = legacy_snapshot()
-    migrate('upgrade', 'head')
+    migrate('upgrade', 'f2b61d9a430c')
     assert legacy_snapshot() == before
     with engine.connect() as conn:
         assert conn.execute(text('SELECT version_num FROM alembic_version')).scalar_one() == HEAD
@@ -49,13 +49,13 @@ def test_additive_migration_and_round_trip(postgres_database):
     migrate('downgrade', BRIDGE)
     assert legacy_snapshot() == before
     assert not {'accounts', 'account_roles', 'account_ledgers'} & set(inspect(engine).get_table_names())
-    migrate('upgrade', 'head')
+    migrate('upgrade', 'f2b61d9a430c')
     assert legacy_snapshot() == before
 
 
 def test_direct_sql_tax_integrity(postgres_database):
     engine, migrate = postgres_database
-    migrate('upgrade', 'head')
+    migrate('upgrade', 'f2b61d9a430c')
     with engine.begin() as conn:
         insert = text('INSERT INTO accounts (account_code,account_name,gstin,pan_card) VALUES (:code,\'Example\',:gstin,:pan)')
         for index, (gstin, pan) in enumerate([
@@ -87,7 +87,7 @@ def test_direct_sql_tax_integrity(postgres_database):
 
 def test_direct_sql_roles_and_ledgers(postgres_database):
     engine, migrate = postgres_database
-    migrate('upgrade', 'head')
+    migrate('upgrade', 'f2b61d9a430c')
     with engine.begin() as conn:
         account = conn.execute(text("INSERT INTO accounts (account_code,account_name) VALUES ('A','Example') RETURNING id")).scalar_one()
         second = conn.execute(text("INSERT INTO accounts (account_code,account_name) VALUES ('B','Second') RETURNING id")).scalar_one()
@@ -132,7 +132,7 @@ def test_direct_sql_roles_and_ledgers(postgres_database):
 @pytest.mark.parametrize('kind', ['gstin', 'role'])
 def test_concurrent_uniqueness(postgres_database, kind):
     engine, migrate = postgres_database
-    migrate('upgrade', 'head')
+    migrate('upgrade', 'f2b61d9a430c')
     with engine.begin() as conn:
         account_id = conn.execute(text("INSERT INTO accounts (account_code,account_name) VALUES ('owner','Owner') RETURNING id")).scalar_one()
     for attempt in range(3):

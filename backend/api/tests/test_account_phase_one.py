@@ -19,7 +19,7 @@ OTHER = '24FGHIJ5678K1Z5'
 
 def create_input(**changes):
     return AccountCreate.model_validate(dict(account_code='ACC-1', account_name='Example',
-        roles=[{'role': 'CUSTOMER'}], **changes))
+        roles=[{'role': 'CUSTOMER'}], state_code='24', **changes))
 
 
 @pytest.mark.parametrize('gstin,pan,expected', [
@@ -55,7 +55,7 @@ def test_invalid_tax_identity(values):
     ({'pan_card': None}, GSTIN, 'ABCDE1234F'),
 ])
 def test_patch_preserves_or_derives_pan(patch, gstin, pan):
-    current = AccountBase(account_name='Before', gstin=GSTIN, mobile='123')
+    current = AccountBase(account_name='Before', state_code='24', gstin=GSTIN, mobile='123')
     result = AccountUpdate(**patch).apply_to(current)
     assert (result.gstin, result.pan_card) == (gstin, pan)
     assert result.account_name == 'Before' and result.mobile == '123'
@@ -69,7 +69,7 @@ def test_patch_preserves_or_derives_pan(patch, gstin, pan):
 ])
 def test_invalid_patch_final_state(patch):
     with pytest.raises(ValidationError):
-        AccountUpdate(**patch).apply_to(AccountBase(account_name='Before', gstin=GSTIN))
+        AccountUpdate(**patch).apply_to(AccountBase(account_name='Before', state_code='24', gstin=GSTIN))
 
 
 @pytest.mark.parametrize('role', list(AccountRoleCode))
@@ -109,7 +109,7 @@ def test_ledger_schema_amount_and_direction(field, amount, direction, valid):
 
 
 def test_multi_role_creation_and_balances(db_session):
-    data = AccountCreate(account_code='ACC-1', account_name='ABC Traders', gstin=GSTIN,
+    data = AccountCreate(account_code='ACC-1', account_name='ABC Traders', state_code='24', gstin=GSTIN,
         roles=[{'role': 'CUSTOMER', 'opening_balance': '10000', 'balance_type': 'Debit'},
                {'role': 'SUPPLIER', 'opening_balance': '6000', 'balance_type': 'Credit'}])
     account = Account(**data.model_dump(exclude={'roles'}))

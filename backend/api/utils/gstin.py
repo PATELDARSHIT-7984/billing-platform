@@ -24,6 +24,12 @@ def normalize_pan(value: str | None) -> str | None:
     return value
 
 
-def pan_from_gstin(gstin: str | None) -> str | None:
+def pan_from_gstin(gstin: str | None, supplied_pan: str | None = None) -> str | None:
+    """Derive PAN and, when supplied, check the same Account consistency rule."""
     gstin = normalize_gstin(gstin)
-    return gstin[2:12] if gstin else None
+    derived = gstin[2:12] if gstin else None
+    if gstin and supplied_pan is not None:
+        supplied_pan = normalize_pan(supplied_pan)
+        if supplied_pan is not None and supplied_pan != derived:
+            raise ValueError("PAN does not match the PAN contained in GSTIN.")
+    return derived

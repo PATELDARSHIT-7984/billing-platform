@@ -64,7 +64,7 @@ def postgres_database():
 ])
 def test_concurrent_global_reservation(postgres_database, monkeypatch, kinds):
     engine, migrate = postgres_database
-    migrate('upgrade', 'head')
+    migrate('upgrade', 'e9a41c8d720b')
     sessions = sessionmaker(bind=engine)
     validate = gstin_identity.validate_available
     barrier = Barrier(2)
@@ -115,17 +115,17 @@ def test_migration_backfill_conflicts_and_round_trip(postgres_database):
                           "VALUES ('Test','9876543210','Road','City','State','24abcde1234f1z5',true)"))
         conn.execute(text("INSERT INTO parties (name,gstin,opening_balance,current_balance,balance_type,current_balance_type,is_active) "
                           "VALUES ('Test','24ABCDE1234F1Z5',12,34,'Credit','Debit',false)"))
-    output = migrate('upgrade', 'head', succeeds=False)
+    output = migrate('upgrade', 'e9a41c8d720b', succeeds=False)
     assert 'conflicting account identities' in output
     with engine.begin() as conn:
         assert 'account_gstin_registry' not in inspect(conn).get_table_names()
         assert conn.execute(text('SELECT version_num FROM alembic_version')).scalar_one() == 'c4a9e7120d35'
         conn.execute(text("UPDATE parties SET gstin='INVALIDGSTIN123'"))
-    output = migrate('upgrade', 'head', succeeds=False)
+    output = migrate('upgrade', 'e9a41c8d720b', succeeds=False)
     assert 'invalid account GSTINs' in output
     with engine.begin() as conn:
         conn.execute(text("UPDATE parties SET gstin='  '"))
-    migrate('upgrade', 'head')
+    migrate('upgrade', 'e9a41c8d720b')
 
     def verify():
         with engine.connect() as conn:
@@ -140,5 +140,5 @@ def test_migration_backfill_conflicts_and_round_trip(postgres_database):
 
     verify()
     migrate('downgrade', 'c4a9e7120d35')
-    migrate('upgrade', 'head')
+    migrate('upgrade', 'e9a41c8d720b')
     verify()

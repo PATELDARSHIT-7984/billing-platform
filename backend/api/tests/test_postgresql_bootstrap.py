@@ -24,7 +24,7 @@ def test_migrated_postgresql_application(monkeypatch):
     try:
         with engine.connect() as connection:
             assert connection.execute(text('SELECT current_database()')).scalar_one() == database
-            assert connection.execute(text('SELECT version_num FROM alembic_version')).scalar_one() == 'f2b61d9a430c'
+            assert connection.execute(text('SELECT version_num FROM alembic_version')).scalar_one() == 'a7c92e1b640d'
             assert set(inspect(connection).get_table_names()) == set(Base.metadata.tables) | {'alembic_version'}
         with TestClient(app) as client:
             assert client.get('/health').json() == {'status': 'ok'}
