@@ -30,7 +30,7 @@ def test_deployment_copy_baseline_integrity(postgres_database, tmp_path, baselin
     shutil.copy2(ROOT / 'alembic.ini', deployment / 'alembic.ini')
     baseline = deployment / 'alembic/data/phase_2b_approved.json'
     if baseline_case == 'tampered':
-        baseline.write_bytes(baseline.read_bytes().replace(b'Dhruv', b'dhruv', 1))
+        baseline.write_bytes(baseline.read_bytes().replace(b'Krunal', b'krunal', 1))
     elif baseline_case == 'missing':
         baseline.unlink()
     elif baseline_case == 'malformed':
@@ -143,26 +143,36 @@ def seed(engine):
 def snapshot(engine):
     with engine.connect() as conn:
         return {table: conn.execute(sa.text(f'SELECT row_to_json(t)::text FROM {table} t ORDER BY row_to_json(t)::text')).scalars().all()
-                for table in ('customers','parties','bill','sales_returns','purchases','purchase_returns','quotations','rojmel')}
+                for table in ('customers','parties','bill','sales_returns','purchases','purchase_returns','quotations','rojmel',
+                              'bill_item','sales_return_items','purchase_items','purchase_return_items','quotation_items')}
 
 
-def upgrade(migrate, artifact, succeeds=True):
-    return migrate('-x', f'account_tax_audit={artifact}', 'upgrade', HEAD, succeeds=succeeds)
+def upgrade(migrate, succeeds=True):
+    return migrate('upgrade', HEAD, succeeds=succeeds)
 
 
-def prepare(postgres_database, tmp_path):
+def prepare(postgres_database):
     engine, migrate = postgres_database
-    migrate('upgrade', PRE)
+    migrate('upgrade', 'f2b61d9a430c')
     seed(engine)
-    artifact = tmp_path / 'tax-audit.json'
-    remediate(engine, apply=True, audit_path=artifact)
-    return engine, migrate, artifact
+    return engine, migrate
+
+
+def seed_historical_remediation(engine):
+    """Obsolete localhost dataset only; independent of the approved Neon baseline."""
+    from scripts.remediate_account_tax import EXPECTED
+    with engine.begin() as conn:
+        for identity, (gstin, pan) in EXPECTED.items():
+            conn.execute(sa.text("INSERT INTO parties(id,name,party_code,gstin,pan_card,opening_balance,"
+                                 "current_balance,balance_type,current_balance_type,is_active) VALUES "
+                                 "(:id,'Historical local fixture',:code,:gstin,:pan,10,20,'Debit','Credit',true)"),
+                         dict(id=identity,code=f'PTY-{identity:04}',gstin=gstin,pan=pan))
 
 
 def test_remediation_dry_run_and_exact_changes(postgres_database, tmp_path):
     engine, migrate = postgres_database
     migrate('upgrade', PRE)
-    seed(engine)
+    seed_historical_remediation(engine)
     before = snapshot(engine)
     report = remediate(engine)
     assert snapshot(engine) == before
@@ -186,7 +196,7 @@ def test_remediation_dry_run_and_exact_changes(postgres_database, tmp_path):
 def test_remediation_aborts_atomically(postgres_database, tmp_path, failure):
     engine, migrate = postgres_database
     migrate('upgrade', PRE)
-    seed(engine)
+    seed_historical_remediation(engine)
     artifact = tmp_path / 'audit.json'
     with engine.begin() as conn:
         if failure == 'tax_drift':
@@ -207,15 +217,34 @@ def test_remediation_aborts_atomically(postgres_database, tmp_path, failure):
 
 
 def test_full_chain_reconciliation_and_downgrade(postgres_database, tmp_path):
-    engine, migrate, artifact = prepare(postgres_database, tmp_path)
+    engine, migrate = prepare(postgres_database)
     before = snapshot(engine)
-    upgrade(migrate, artifact)
+    assert [row['id'] for row in BASELINE['customer']] == [1,2,3]
+    assert [row['id'] for row in BASELINE['party']] == [1,2,3,4,5]
+    assert BASELINE['references'] == {
+        'bill.customer_id': {'3':1}, 'purchases.party_id': {'1':1},
+        'sales_returns.customer_id': {}, 'purchase_returns.party_id': {},
+        'quotations.customer_id': {}, 'rojmel.party_id': {}, 'rojmel.customer_id': {},
+    }
+    with engine.connect() as conn:
+        foreign_keys = {table: sa.inspect(conn).get_foreign_keys(table) for table in before}
+        for key, counts in BASELINE['references'].items():
+            table, column = key.split('.')
+            actual = conn.execute(sa.text(f'SELECT {column},count(*) FROM {table} GROUP BY {column}')).all()
+            assert {str(identity): count for identity,count in actual} == counts
+    upgrade(migrate)
     assert snapshot(engine) == before
     with engine.connect() as conn:
+        assert {table: sa.inspect(conn).get_foreign_keys(table) for table in before} == foreign_keys
+        assert dict(conn.execute(sa.text('SELECT role,count(*) FROM account_roles GROUP BY role')).all()) == {
+            'CUSTOMER':3, 'SUPPLIER':3, 'PURCHASE_VENDOR':2,
+        }
+        assert conn.execute(sa.text("SELECT mobile FROM accounts WHERE account_code='PTY-0001'")).scalar_one() == '94293 06505'
+        assert conn.execute(sa.text("SELECT mobile FROM accounts WHERE account_code='PTY-0002'")).scalar_one() == '798568984'
         for table in ('accounts','account_roles','account_ledgers','legacy_account_map'):
-            assert conn.execute(sa.text(f'SELECT count(*) FROM {table}')).scalar_one() == 14
+            assert conn.execute(sa.text(f'SELECT count(*) FROM {table}')).scalar_one() == 8
         mappings = conn.execute(sa.text('SELECT * FROM legacy_account_map ORDER BY legacy_source,legacy_id')).mappings().all()
-        assert len({m['account_id'] for m in mappings}) == 14  # No merges of any kind.
+        assert len({m['account_id'] for m in mappings}) == 8  # No merges of any kind.
         zero_count = 0
         for mapping in mappings:
             source, identity = mapping['legacy_source'], mapping['legacy_id']
@@ -230,55 +259,67 @@ def test_full_chain_reconciliation_and_downgrade(postgres_database, tmp_path):
                 assert ledger[amount] == Decimal(original[amount]), (source,identity,amount)
                 assert ledger[direction] == (original[direction] if Decimal(original[amount]) else None), (source,identity,direction)
                 zero_count += not Decimal(original[amount])
-            if source == 'party' and identity in (4,5,10):
-                assert account['gstin'] is account['pan_card'] is None
-                assert account['gstin_pending'] is True
-                assert mapping['source_snapshot']['remediation_audit']['sha256']
+            assert mapping['source_snapshot']['at_backfill'] == original
+            assert 'remediation_audit' not in mapping['source_snapshot']
+            assert account['gstin_pending'] is False
+            assert account['gstin'] == original['gstin']
+            assert account['pan_card'] == original['pan_card']
+            for field in ('mobile','address','city','country_code','email'):
+                assert account[field] == original.get(field)
+            expected_role = 'CUSTOMER' if source == 'customer' else ('SUPPLIER' if identity <= 3 else 'PURCHASE_VENDOR')
+            assert role['role'] == ledger['role'] == mapping['account_role'] == expected_role
+            if (source, identity) in [('customer',3),('party',2)]:
+                assert original['state'] == 'Gujarat'
+                assert (account['state_code'],account['state']) == ('07','Delhi')
+                if source == 'customer':
+                    assert original['state_code'] is None
             else:
-                assert account['gstin_pending'] is False
-            if source == 'customer' and identity == 3:
-                assert (account['gstin'],account['pan_card'],account['state_code'],account['state']) == (
-                    '27AAACR5055K1Z7','AAACR5055K','27','Maharashtra')
-            if source == 'customer' and identity == 4:
-                assert (account['gstin'],account['state_code'],account['state']) == (
-                    '28BBBCR5055K1Z9','28','Andhra Pradesh (Old)')
-        assert zero_count == 16
+                assert (account['state_code'],account['state']) == ('24','Gujarat')
+            if source == 'party' and identity in (4,5):
+                assert account['gstin'] is account['pan_card'] is None
+        assert zero_count == 3
     migrate('downgrade','f2b61d9a430c')
     assert snapshot(engine) == before
-    upgrade(migrate, artifact)
+    upgrade(migrate)
     assert snapshot(engine) == before
 
 
-@pytest.mark.parametrize('drift', ['identity','code','balance','pan','state','reference','artifact','target'])
+@pytest.mark.parametrize('drift', ['unexpected_customer','missing_customer','unexpected_party','missing_party','code','balance','pan','state','reference','target'])
 def test_backfill_drift_rolls_back(postgres_database, tmp_path, drift):
-    engine, migrate, artifact = prepare(postgres_database, tmp_path)
+    engine, migrate = prepare(postgres_database)
     migrate('upgrade','f2b61d9a430c')
     with engine.begin() as conn:
         statements = {
-            'identity': "INSERT INTO parties(id,name,party_code,party_type,opening_balance,current_balance,balance_type,current_balance_type,is_active) VALUES (99,'New','PTY-NEW','Supplier',0,0,'Credit','Credit',true)",
+            'unexpected_customer': "INSERT INTO customers(id,customer_name,customer_code,mobile,address,city,state,is_active) VALUES (99,'New','CUS-NEW','123','Road','City','Gujarat',true)",
+            'missing_customer': 'DELETE FROM customers WHERE id=1',
+            'missing_party': 'DELETE FROM parties WHERE id=5',
+            'unexpected_party': "INSERT INTO parties(id,name,party_code,party_type,opening_balance,current_balance,balance_type,current_balance_type,is_active) VALUES (99,'New','PTY-NEW','Supplier',0,0,'Credit','Credit',true)",
             'code': "UPDATE parties SET party_code='CHANGED' WHERE id=2",
             'balance': 'UPDATE customers SET current_balance=current_balance+1 WHERE id=1',
             'pan': "UPDATE parties SET pan_card='ABCDE1234F' WHERE id=2",
             'state': "UPDATE parties SET state='Unknown' WHERE id=1",
-            'reference': 'UPDATE bill SET customer_id=3 WHERE customer_id=1',
+            'reference': 'UPDATE bill SET customer_id=1 WHERE customer_id=3',
             'target': "INSERT INTO accounts(account_code,account_name) VALUES ('UNREVIEWED','Unreviewed')",
         }
-        if drift in statements:
-            conn.execute(sa.text(statements[drift]))
-        else:
-            artifact.write_text('{}',encoding='utf-8')
+        conn.execute(sa.text(statements[drift]))
     before = snapshot(engine)
-    upgrade(migrate, artifact, succeeds=False)
+    output = upgrade(migrate, succeeds=False)
+    assert ('source identity set drift' if 'customer' in drift or 'party' in drift else
+            'transaction reference baseline differs' if drift == 'reference' else
+            'empty target Account tables' if drift == 'target' else 'material drift') in output
     assert snapshot(engine) == before
     with engine.connect() as conn:
+        for table in ('accounts','account_roles','account_ledgers'):
+            expected_count = int(drift == 'target' and table == 'accounts')
+            assert conn.execute(sa.text(f'SELECT count(*) FROM {table}')).scalar_one() == expected_count
         assert conn.execute(sa.text('SELECT version_num FROM alembic_version')).scalar_one() == 'f2b61d9a430c'
         assert 'gstin_pending' not in {c['name'] for c in sa.inspect(conn).get_columns('accounts')}
         assert 'legacy_account_map' not in sa.inspect(conn).get_table_names()
 
 
 def test_database_guards_and_downgrade_refusal(postgres_database, tmp_path):
-    engine, migrate, artifact = prepare(postgres_database, tmp_path)
-    upgrade(migrate, artifact)
+    engine, migrate = prepare(postgres_database)
+    upgrade(migrate)
     with engine.begin() as conn:
         for sql in [
             "UPDATE accounts SET state_code='27' WHERE account_code='CUS-0001'",
@@ -295,19 +336,21 @@ def test_database_guards_and_downgrade_refusal(postgres_database, tmp_path):
         conn.execute(sa.text("UPDATE accounts SET remarks='Post-cutover edit' WHERE account_code='CUS-0001'"))
     migrate('downgrade','f2b61d9a430c', succeeds=False)
     with engine.connect() as conn:
-        assert conn.execute(sa.text('SELECT count(*) FROM legacy_account_map')).scalar_one() == 14
+        assert conn.execute(sa.text('SELECT count(*) FROM legacy_account_map')).scalar_one() == 8
 
 
 def test_failure_after_backfill_writes_rolls_back_schema_and_data(postgres_database, tmp_path):
-    engine, migrate, artifact = prepare(postgres_database, tmp_path)
+    engine, migrate = prepare(postgres_database)
     migrate('upgrade','f2b61d9a430c')
     with engine.begin() as conn:
-        conn.execute(sa.text("CREATE FUNCTION reject_last_account() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.account_code='PTY-0010' THEN RAISE EXCEPTION 'injected'; END IF; RETURN NEW; END $$"))
+        conn.execute(sa.text("CREATE FUNCTION reject_last_account() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.account_code='PTY-0005' THEN RAISE EXCEPTION 'injected'; END IF; RETURN NEW; END $$"))
         conn.execute(sa.text('CREATE TRIGGER reject_last_account BEFORE INSERT ON accounts FOR EACH ROW EXECUTE FUNCTION reject_last_account()'))
     before = snapshot(engine)
-    upgrade(migrate, artifact, succeeds=False)
+    output = upgrade(migrate, succeeds=False)
+    assert 'injected' in output
     assert snapshot(engine) == before
     with engine.connect() as conn:
+        assert conn.execute(sa.text('SELECT version_num FROM alembic_version')).scalar_one() == 'f2b61d9a430c'
         for table in ('accounts','account_roles','account_ledgers'):
             assert conn.execute(sa.text(f'SELECT count(*) FROM {table}')).scalar_one() == 0
         assert 'legacy_account_map' not in sa.inspect(conn).get_table_names()
@@ -317,8 +360,8 @@ def test_failure_after_backfill_writes_rolls_back_schema_and_data(postgres_datab
 def test_new_constraints_preserve_nulls_pan_and_concurrent_uniqueness(postgres_database, tmp_path):
     from concurrent.futures import ThreadPoolExecutor
     from threading import Barrier
-    engine, migrate, artifact = prepare(postgres_database, tmp_path)
-    upgrade(migrate, artifact)
+    engine, migrate = prepare(postgres_database)
+    upgrade(migrate)
     with engine.begin() as conn:
         for code in ('NULL-A','NULL-B'):
             conn.execute(sa.text("INSERT INTO accounts(account_code,account_name,pan_card,gstin_pending) VALUES (:code,'Manual','ZZZZZ1234Z',true)"), {'code':code})

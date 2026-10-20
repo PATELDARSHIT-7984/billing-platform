@@ -7,7 +7,7 @@ import hashlib
 import json
 from pathlib import Path
 from decimal import Decimal
-from alembic import op, context
+from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB
 
@@ -19,11 +19,10 @@ depends_on = None
 # Frozen historical mapping; intentionally independent of mutable runtime helpers.
 STATES = {'01': 'Jammu and Kashmir', '02': 'Himachal Pradesh', '03': 'Punjab', '04': 'Chandigarh', '05': 'Uttarakhand', '06': 'Haryana', '07': 'Delhi', '08': 'Rajasthan', '09': 'Uttar Pradesh', '10': 'Bihar', '11': 'Sikkim', '12': 'Arunachal Pradesh', '13': 'Nagaland', '14': 'Manipur', '15': 'Mizoram', '16': 'Tripura', '17': 'Meghalaya', '18': 'Assam', '19': 'West Bengal', '20': 'Jharkhand', '21': 'Odisha', '22': 'Chhattisgarh', '23': 'Madhya Pradesh', '24': 'Gujarat', '25': 'Daman and Diu', '26': 'Dadra and Nagar Haveli and Daman and Diu', '27': 'Maharashtra', '28': 'Andhra Pradesh (Old)', '29': 'Karnataka', '30': 'Goa', '31': 'Lakshadweep', '32': 'Kerala', '33': 'Tamil Nadu', '34': 'Puducherry', '35': 'Andaman and Nicobar Islands', '36': 'Telangana', '37': 'Andhra Pradesh', '38': 'Ladakh', '97': 'Other Territory'}
 BASELINE = Path(__file__).resolve().parents[1] / 'data' / 'phase_2b_approved.json'
-BASELINE_SHA256 = 'afad1de423c944b1fc12db8a037c8a814ce73b7b1d5ece0a5d7cdad39be55e57'
+BASELINE_SHA256 = 'c67cdf4128e30c15ccb01677766711e00a48d2918876c0cebad91d2d7cf30026'
 TRANSACTIONS = ('bill', 'sales_returns', 'purchases', 'purchase_returns', 'quotations', 'rojmel')
 DOCUMENT_LINES = ('bill_item', 'sales_return_items', 'purchase_items', 'purchase_return_items', 'quotation_items')
 TARGETS = ('accounts', 'account_roles', 'account_ledgers')
-REMEDIATED = {4, 5, 10}
 
 
 def _baseline():
@@ -72,15 +71,13 @@ def _preflight(connection):
         if any(connection.execute(sa.text(f'SELECT count(*) FROM {table}')).scalar_one()
                for table in (*TRANSACTIONS, *DOCUMENT_LINES)):
             raise RuntimeError('Empty identity bootstrap requires empty transaction tables.')
-        return rows, None
+        return rows
     for source in ('customer', 'party'):
         originals = expected[source]
         if [r['id'] for r in rows[source]] != [r['id'] for r in originals]:
             raise RuntimeError(f'Phase 2B source identity set drift: {source}')
         for actual, original in zip(rows[source], originals):
             approved = dict(original)
-            if source == 'party' and original['id'] in REMEDIATED:
-                approved.update(gstin=None, pan_card=None)
             if _business(actual) != approved:
                 fields = [key for key in approved if _business(actual).get(key) != approved[key]]
                 raise RuntimeError(f'Phase 2B material drift: {source}:{original["id"]}, fields={fields}')
@@ -89,19 +86,7 @@ def _preflight(connection):
     codes = [r.get('customer_code', r.get('party_code')) for group in rows.values() for r in group]
     if len(codes) != len(set(codes)) or any(not code or not code.strip() for code in codes):
         raise RuntimeError('Phase 2B duplicate or missing legacy code.')
-    # The artifact is generated before remediation writes. Current NULL values and
-    # the exact audited original values are independently checked here.
-    artifact_path = context.get_x_argument(as_dictionary=True).get('account_tax_audit')
-    if not artifact_path:
-        raise RuntimeError('Provide -x account_tax_audit=<pre-remediation artifact>.')
-    artifact_bytes = Path(artifact_path).read_bytes()
-    artifact = json.loads(artifact_bytes)
-    approved_tax = [{k: row[k] for k in ('id', 'party_code', 'name', 'gstin', 'pan_card')}
-                    for row in expected['party'] if row['id'] in REMEDIATED]
-    if (artifact.get('revision') != 'c4a9e7120d35' or artifact.get('parties') != approved_tax
-            or artifact.get('status') != 'pre-mutation intent' or not artifact.get('recorded_at')):
-        raise RuntimeError('Pre-remediation audit artifact differs from approved original values.')
-    return rows, dict(sha256=hashlib.sha256(artifact_bytes).hexdigest(), recorded_at=artifact['recorded_at'])
+    return rows
 
 
 def _target(source, original):
@@ -117,15 +102,14 @@ def _target(source, original):
     pan = row['pan_card']
     if gstin:
         derived = gstin[2:12]  # Frozen historical derivation, not a runtime helper import.
-        if pan and pan != derived and (source, row['id'], gstin, pan) != (
-                'customer', 3, '27AAACR5055K1Z7', 'AACR5055K1'):
+        if pan and pan != derived:
             raise RuntimeError('Unapproved legacy PAN mismatch.')
         pan = derived
     account = {key: row.get(key) for key in ('country_code', 'mobile', 'email', 'address', 'city', 'pincode', 'remarks')}
     account.update(account_code=row.get('customer_code', row.get('party_code')),
                    account_name=row.get('customer_name', row.get('name')), gstin=gstin, pan_card=pan,
                    state_code=code, state=STATES.get(code), is_active=row['is_active'],
-                   gstin_pending=source == 'party' and row['id'] in REMEDIATED)
+                   gstin_pending=False)
     role = 'CUSTOMER' if source == 'customer' else {'Supplier': 'SUPPLIER', 'PURCHASE_VENDOR': 'PURCHASE_VENDOR'}[row['party_type']]
     ledger = {'role': role, 'opening_remark': row.get('opening_remark')}
     for field, direction in [('opening_balance', 'balance_type'), ('current_balance', 'current_balance_type')]:
@@ -142,7 +126,7 @@ def upgrade():
     connection = op.get_bind()
     connection.execute(sa.text('LOCK TABLE customers, parties, accounts, account_roles, account_ledgers, '
                                + ', '.join((*TRANSACTIONS, *DOCUMENT_LINES)) + ' IN SHARE ROW EXCLUSIVE MODE'))
-    rows, artifact = _preflight(connection)
+    rows = _preflight(connection)
     transactions = _transaction_snapshot(connection)
     op.add_column('accounts', sa.Column('gstin_pending', sa.Boolean(), nullable=False, server_default=sa.false()))
     op.create_check_constraint('ck_accounts_gstin_pending', 'accounts', 'gstin IS NULL OR NOT gstin_pending')
@@ -184,8 +168,6 @@ def upgrade():
             snapshot = dict(original=original, at_backfill=_business(row),
                 target_fingerprints={name: dict(id=identity, digest=_fingerprint(connection, name, identity))
                                      for name, identity in zip(TARGETS, (aid, rid, lid))})
-            if source == 'party' and row['id'] in REMEDIATED:
-                snapshot['remediation_audit'] = artifact
             connection.execute(tables['legacy_account_map'].insert().values(legacy_source=source, legacy_id=row['id'],
                 account_id=aid, account_role=role, account_ledger_id=lid, legacy_code=account['account_code'],
                 migration_revision=revision, source_snapshot=snapshot))
@@ -199,7 +181,7 @@ def upgrade():
     for table in (*TARGETS, 'legacy_account_map'):
         if connection.execute(sa.text(f'SELECT count(*) FROM {table}')).scalar_one() != sum(map(len, rows.values())):
             raise RuntimeError('Phase 2B target count reconciliation failed.')
-    if _transaction_snapshot(connection) != transactions or (artifact and _references(connection) != expected['references']):
+    if _transaction_snapshot(connection) != transactions or (any(rows.values()) and _references(connection) != expected['references']):
         raise RuntimeError('Transactions changed during Account backfill.')
     for source, table in [('customer', 'customers'), ('party', 'parties')]:
         if _rows(connection, table) != rows[source]:
