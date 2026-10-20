@@ -2,18 +2,24 @@
 from sqlalchemy import (
     Boolean, CheckConstraint, Column, DateTime, Enum, ForeignKey,
     ForeignKeyConstraint, Index, Integer, Numeric, String, Text, UniqueConstraint,
-    func, true,
+    func, true, false,
 )
 from sqlalchemy.orm import relationship
 
 from api.config.database import Base
 from api.schema.account_role import AccountRoleCode
 from api.utils.gstin import GSTIN_PATTERN, PAN_PATTERN
+from api.utils.gst_state import GST_STATES
 
 
 class Account(Base):
     __tablename__ = "accounts"
     __table_args__ = (
+        CheckConstraint("gstin IS NULL OR NOT gstin_pending", name="ck_accounts_gstin_pending"),
+        CheckConstraint("gstin IS NULL OR (state_code IS NOT NULL AND substr(gstin, 1, 2) = state_code)",
+                        name="ck_accounts_gstin_state"),
+        CheckConstraint("state_code IS NULL OR state_code IN (" +
+                        ','.join(repr(code) for code in GST_STATES) + ")", name="ck_accounts_state_code"),
         UniqueConstraint("account_code", name="uq_accounts_code"),
         UniqueConstraint("gstin", name="uq_accounts_gstin"),
         CheckConstraint("length(trim(account_code)) > 0", name="ck_accounts_code"),
@@ -37,6 +43,7 @@ class Account(Base):
     pincode = Column(String(20))
     state_code = Column(String(2))
     gstin = Column(String)  # CHECK enforces length without VARCHAR truncating trailing spaces.
+    gstin_pending = Column(Boolean, nullable=False, default=False, server_default=false())
     pan_card = Column(String)
     remarks = Column(Text)
     is_active = Column(Boolean, nullable=False, default=True, server_default=true())
@@ -66,6 +73,7 @@ class AccountRole(Base):
 class AccountLedger(Base):
     __tablename__ = "account_ledgers"
     __table_args__ = (
+        UniqueConstraint("id", "account_id", "role", name="uq_account_ledgers_identity"),
         UniqueConstraint("account_id", "role", name="uq_account_ledgers_account_role"),
         ForeignKeyConstraint(["account_id", "role"], ["account_roles.account_id", "account_roles.role"],
                              name="fk_account_ledger_role", ondelete="RESTRICT", onupdate="RESTRICT"),

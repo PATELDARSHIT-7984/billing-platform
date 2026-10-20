@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, mo
 from api.schema.account_role import AccountRoleCode
 from api.utils.account_balance import BalanceType
 from api.utils.gstin import normalize_gstin, normalize_pan, pan_from_gstin
+from api.utils.gst_state import GST_STATES, normalize_state_code, state_code_from_name, validate_selectable_state
 
 Money = Annotated[Decimal, Field(ge=0, max_digits=18, decimal_places=2, allow_inf_nan=False)]
 
@@ -29,20 +30,27 @@ class AccountBase(BaseModel):
     pincode: str | None = Field(default=None, max_length=20)
     state_code: str | None = Field(default=None, max_length=2)
     gstin: str | None = None
+    gstin_pending: bool = False
     pan_card: str | None = None
     remarks: str | None = None
     is_active: bool = True
 
     _gstin = field_validator("gstin")(normalize_gstin)
     _pan = field_validator("pan_card")(normalize_pan)
+    _state_code = field_validator("state_code")(normalize_state_code)
 
     @model_validator(mode="after")
     def consistent_tax_identity(self):
+        if self.state_code is None and self.state:
+            self.state_code = state_code_from_name(self.state)
+        self.state = GST_STATES.get(self.state_code)
         if self.gstin:
-            derived = pan_from_gstin(self.gstin)
-            if self.pan_card is not None and self.pan_card != derived:
-                raise ValueError("PAN does not match the PAN contained in GSTIN.")
-            self.pan_card = derived
+            if self.state_code is None:
+                raise ValueError("Select a state when GSTIN is provided.")
+            if self.gstin[:2] != self.state_code:
+                raise ValueError("GSTIN does not match the selected state.")
+            self.pan_card = pan_from_gstin(self.gstin, self.pan_card)
+            self.gstin_pending = False
         return self
 
 
@@ -63,6 +71,11 @@ class AccountCreate(AccountBase):
     account_code: str = Field(min_length=1, max_length=30)
     roles: list[AccountRoleInput] = Field(min_length=1)
 
+    @model_validator(mode="after")
+    def current_state_selection(self):
+        validate_selectable_state(self.state_code)
+        return self
+
     @field_validator("roles")
     @classmethod
     def unique_roles(cls, roles):
@@ -73,6 +86,23 @@ class AccountCreate(AccountBase):
 
 class AccountUpdate(AccountBase):
     account_name: str | None = Field(default=None, min_length=2, max_length=200)
+
+    @model_validator(mode="after")
+    def consistent_tax_identity(self):
+        # PATCH is incomplete: state/GSTIN agreement requires the saved identity.
+        # Mark derived fields as supplied so exclude_unset preserves them.
+        if 'state_code' in self.model_fields_set:
+            self.state = GST_STATES.get(self.state_code)
+        elif 'state' in self.model_fields_set:
+            self.state_code = state_code_from_name(self.state)
+            self.state = GST_STATES.get(self.state_code)
+        if 'state_code' in self.model_fields_set:
+            validate_selectable_state(self.state_code)
+        if self.gstin:
+            validate_selectable_state(self.gstin[:2])
+            self.pan_card = pan_from_gstin(self.gstin, self.pan_card)
+            self.gstin_pending = False
+        return self
 
     @field_validator("account_name")
     @classmethod
