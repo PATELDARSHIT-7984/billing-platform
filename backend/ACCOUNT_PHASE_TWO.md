@@ -46,94 +46,92 @@ DB checks additionally enforce valid state codes, GSTIN/code agreement, and
 GSTIN/pending exclusion. Existing GSTIN/PAN and ledger checks remain intact.
 Display-name derivation is an application contract, not a database trigger.
 
-## Approved baseline
+## Corrected approved baseline: Neon audit
 
-`alembic/data/phase_2b_approved.json` is an immutable business-field snapshot of
-the reviewed Phase 2A dataset. It contains business contact/tax information, no
-credentials. Treat it as migration provenance, not a fresh runtime export.
-Ship this file with the migration and do not regenerate it to bypass drift checks.
+The original Phase 2B baseline was mistakenly taken from localhost and assumed to
+represent UAT. The user-supplied SELECT-only Neon audit instead confirms persisted
+revision `f2b61d9a430c`, empty Account/Role/Ledger tables, and no legacy map. The
+failed Phase 2B attempt did not persist its schema or backfill. This correction
+changes only the failed Phase 2B revision; earlier migrations remain frozen.
+No Neon query, remediation, migration, or Railway action is part of this correction.
+
+`alembic/data/phase_2b_approved.json` contains the exact approved raw business
+fields supplied from that audit: Customer IDs **1,2,3** and Party IDs **1,2,3,4,5**.
+Contact formatting, casing, NULLs, and balance strings are preserved verbatim.
+It contains business contact/tax information, no credentials. Treat it as migration
+provenance. Do not regenerate it to bypass drift checks.
+
 The migration pins SHA-256
-`afad1de423c944b1fc12db8a037c8a814ce73b7b1d5ece0a5d7cdad39be55e57`
-and verifies bytes before parsing, even for empty bootstrap. Missing/unreadable or
-modified files abort. The repository `.gitattributes` preserves these exact bytes
-across Windows/Linux checkouts. Commit the JSON alongside the migration: the
-documented Git-checkout deployment then includes it. No container/package manifest
-is defined; other packaging must explicitly preserve this file and directory.
-Its path is relative to the migration, not the shell working directory.
+`c67cdf4128e30c15ccb01677766711e00a48d2918876c0cebad91d2d7cf30026`
+and verifies exact bytes before parsing, including empty bootstrap. Missing,
+unreadable, or altered files abort. `.gitattributes` preserves these bytes across
+Windows/Linux checkouts. Ship the JSON alongside the migration. Git-checkout
+deployment includes it; any other packaging must explicitly preserve this path.
+The path is relative to the migration, independent of the working directory.
 
-The populated-data branch requires exactly Customer IDs 1,3,4,5 and Party IDs
-1,2,3,4,5,6,7,10,11,12, with exact approved business fields, codes, balances,
-activity and reference counts. Only P4/P5/P10 tax values may differ from that
-snapshot, and they MUST already be NULL after approved remediation.
+The populated branch requires every approved identity, business field, and
+reference count exactly. There are no tax-field exceptions or remediation-artifact
+requirements. Expected transaction references and header counts:
 
-No merges: all 14 sources become 14 Accounts, 14 roles, 14 ledgers, 14 mappings.
-C1/P1, C5/P6, C5/P10 remain separate. Existing codes are retained verbatim.
-Activity copies independently to Account and role. No inactive source is omitted.
+| Table / reference | Approved rows |
+| --- | --- |
+| bill.customer_id | Customer 3: 1 |
+| purchases.party_id | Party 1: 1 |
+| sales_returns.customer_id | 0 |
+| purchase_returns.party_id | 0 |
+| quotations.customer_id | 0 |
+| rojmel.party_id / customer_id | 0 |
 
-Valid legacy GSTIN determines target PAN, state code and canonical state name.
-C3's approved target is GSTIN `27AAACR5055K1Z7`, PAN `AAACR5055K`, state code 27,
-Maharashtra. Its source Customer remains unchanged. Any new PAN mismatch or
-other material drift aborts. Without GSTIN, recognizable legacy state determines
-the code; unknown nonempty state aborts. P4/P5/P10 receive pending=true; others false.
+No merges: **8 Accounts, 8 roles, 8 ledgers, 8 mappings**. Roles comprise 3 CUSTOMER,
+3 SUPPLIER, and 2 PURCHASE_VENDOR. Codes are retained verbatim. P1 remains inactive
+in both Account and role; all other identities remain active.
 
-Opening and current balances are copied independently as Decimal. All 16 audited
-zero amount/direction pairs become 0/NULL. Nonzero values/directions never change.
-Opening-to-current initialization belongs only to future brand-new creation.
+Valid GSTIN determines target PAN, state code, and canonical state name. C3 and P2
+retain their raw source state Gujarat (C3 state_code NULL) in the original and
+at-backfill snapshots; their targets become Delhi/07 from GSTIN prefix 07.
+All other targets use Gujarat/24. All six non-null GSTIN/PAN pairs agree. P4/P5
+already have NULL GSTIN/PAN and remain NULL. All eight targets have pending=false;
+no pending-tax intention is inferred from nullable tax fields. Any PAN mismatch
+or other material source drift aborts.
 
-The explicitly approved fresh-bootstrap exception requires BOTH legacy identity
-tables and ALL transaction headers/lines to be empty, as well as empty Account
-targets. It creates schema only, with zero mappings and no remediation artifact.
-Any partially populated or otherwise unapproved dataset aborts.
+Opening and current balances are copied independently as Decimal, not recalculated.
+Exactly three zero-direction pairs become 0/NULL: P1 opening, P5 opening, and P5
+current. Nonzero amounts and directions remain exact. Opening-to-current
+initialization belongs only to future brand-new Account creation.
 
-## Remediation tool (separate execution approval required)
+Strict empty bootstrap requires both legacy identity tables, all transaction
+headers/lines, and all Account targets to be empty. It creates schema only.
+Every other unapproved populated dataset aborts before backfill. Locks cover source,
+target, and transaction tables. PostgreSQL transactional DDL/data roll back together
+on failure, including failures after target inserts. Reconciliation verifies target
+identities, activity, balances, counts, and unchanged source/transaction rows.
 
-From `backend`, using an interpreter with project dependencies:
+## Historical localhost remediation utility
 
-```powershell
-python -B -m scripts.remediate_account_tax
-```
+`scripts/remediate_account_tax.py` remains unchanged for its original localhost
+P4/P5/P10 dataset at revision `c4a9e7120d35`. Its tests use a separate historical
+fixture. **Do not run it against Neon.** Neon has no P10 and its P4/P5 tax fields are
+already NULL; neither remediation nor an audit artifact is required here.
+The earlier `e9a41c8d720b` registry migration and its validation remain unchanged.
 
-This is dry-run by default and uses a read-only transaction. To apply, only after
-separate approval and after verifying the configured destination:
+## Future deployment sequence (NOT executed)
 
-```powershell
-python -B -m scripts.remediate_account_tax --apply --audit-file <new-protected-audit-path.json>
-```
-
-The utility checks revision `c4a9e7120d35` and exact original P4/P5/P10 GSTIN/PAN,
-locks the revision/Party tables, exports a timestamped pre-mutation artifact, and
-updates only those six tax fields in one transaction. It does not change source
-timestamps. A changed/missing record, wrong revision, existing/unwritable artifact,
-or DB failure aborts. Repeated apply is deliberately refused.
-
-Artifact creation is exclusive, flushed and fsynced BEFORE the update. Retain it
-securely: it contains original business tax values. It records mutation intent,
-not proof of commit; an artifact can survive a rolled-back operation. The CLI
-reports commit only after the transaction succeeds. No credential-bearing error
-or connection URL is printed.
-
-## Future deployment sequence (NOT executed on UAT)
-
-1. Obtain separate approval, verify database destination and backup/recovery readiness.
-2. Run dry-run remediation and review the three records.
-3. Run explicitly approved apply and retain its artifact.
-4. Freeze legacy writes; reconcile against the approved snapshot again.
-5. Run the full migration chain with the artifact, using the Alembic interpreter:
+1. Obtain deployment approval; verify destination and persisted revision.
+2. Back up and verify recoverability before migration; pause legacy writes.
+3. Confirm the frozen source snapshot and exact reference counts still match.
+4. From `backend`, run with the deployment interpreter:
 
 ```powershell
-.\venv\Scripts\python.exe -B -m alembic -x account_tax_audit=<audit-path.json> upgrade head
+.\venv\Scripts\python.exe -B -m alembic upgrade head
 ```
 
-The earlier registry migration is unchanged. Its preflight must succeed before
-Phase 1 or Phase 2B can execute. For populated data the new revision requires the
-exact artifact contents and stores its SHA-256/timestamp in remediated mappings.
+Expected Neon transition: `f2b61d9a430c` -> `a7c92e1b640d`. No `account_tax_audit`
+argument or remediation step is needed. A fresh empty database can traverse the
+complete unchanged earlier chain before applying Phase 2B.
 
-The backfill locks legacy/target/transaction tables, verifies the entire approved
-business snapshot and per-identity reference counts, and rejects preexisting
-Account targets. PostgreSQL transactional DDL/data roll back together on failure.
-Reconciliation verifies all target identities, activities, ledgers, counts, and
-unchanged legacy and transaction rows before commit. Expected header totals:
-Bill 8; Sales Return 2; Purchase 15; Purchase Return 2; Quotation 2; Rojmel 1.
+5. Verify all four target counts equal 8, role split 3/3/2, balances and state
+   transformations, and unchanged source/transaction rows and foreign keys.
+6. Smoke-test the existing application before resuming writes.
 
 ## Durable map and downgrade
 
@@ -142,8 +140,8 @@ ledger IDs, original code, migration revision, timestamp and JSONB snapshot.
 Account ID is not unique. Composite foreign keys ensure the target ledger belongs
 to exactly the mapped Account/role; deletes/updates are RESTRICT. The extra ledger
 unique triple supports that foreign key. Original source fields, at-backfill
-fields and target fingerprints are distinguishable. Invalid pre-remediation tax
-values remain in the original snapshot and are linked to the audit artifact hash.
+fields and target fingerprints are distinguishable. Both source snapshots retain
+the exact approved raw Neon fields; no remediation metadata is fabricated.
 
 Keep the map through final legacy cleanup. It is provenance, not a replacement
 for immutable document snapshots or future transaction foreign keys.
@@ -170,7 +168,8 @@ python -B -m pytest -q --tb=short
 
 Historical migration tests pin their own revision so their synthetic, nonapproved
 legacy data cannot accidentally enter the strict Phase 2B backfill. Phase 2B tests
-cover the full chain separately with the approved business baseline and
+cover empty bootstrap through the full chain and the populated f2-to-a7 path with
+the approved business baseline and
 representative transaction documents matching every reference count.
 
 Deferred: UAT execution; transaction FKs/cutover; Account public API/service;
