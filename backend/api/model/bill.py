@@ -1,3 +1,4 @@
+from sqlalchemy import CheckConstraint, ForeignKeyConstraint
 from sqlalchemy import (
     Boolean,
     Column,
@@ -16,6 +17,16 @@ from api.config.database import Base
 
 class Bill(Base):
     __tablename__ = "bill"
+    account_ledger_id = Column(Integer, nullable=True, index=True)
+    account_role = Column(String(20), nullable=True)
+    __table_args__ = (
+        ForeignKeyConstraint(['account_ledger_id', 'account_role'], ['account_ledgers.id', 'account_ledgers.role'],
+                             name='fk_bill_account_ledger_role', match='FULL', ondelete='RESTRICT', onupdate='RESTRICT'),
+        CheckConstraint("account_role IS NULL OR account_role IN ('CUSTOMER')",
+                        name='ck_bill_account_role'),
+        CheckConstraint('(account_ledger_id IS NULL) = (account_role IS NULL)',
+                        name='ck_bill_account_reference_pair'),
+    )
 
     bill_id = Column(
         Integer,

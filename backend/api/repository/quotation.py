@@ -91,6 +91,9 @@ def create_quotation(db: Session, data: dict) -> Quotation:
 
 
 def update_quotation(db: Session, quotation: Quotation, data: dict) -> Quotation:
+    # Phase 3A: invalidate the snapshot only when the legacy identity changes.
+    if "customer_id" in data and data["customer_id"] != quotation.customer_id:
+        quotation.account_id = None
     for field_name, field_value in data.items():
         setattr(quotation, field_name, field_value)
     db.flush()

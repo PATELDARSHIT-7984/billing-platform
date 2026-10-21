@@ -1,4 +1,4 @@
-"""Additive Account foundation. Existing transactions do not reference these tables."""
+"""Account foundation with transitional transaction references; no runtime posting cutover."""
 from sqlalchemy import (
     Boolean, CheckConstraint, Column, DateTime, Enum, ForeignKey,
     ForeignKeyConstraint, Index, Integer, Numeric, String, Text, UniqueConstraint,
@@ -74,6 +74,7 @@ class AccountLedger(Base):
     __tablename__ = "account_ledgers"
     __table_args__ = (
         UniqueConstraint("id", "account_id", "role", name="uq_account_ledgers_identity"),
+        UniqueConstraint("id", "role", name="uq_account_ledgers_id_role"),
         UniqueConstraint("account_id", "role", name="uq_account_ledgers_account_role"),
         ForeignKeyConstraint(["account_id", "role"], ["account_roles.account_id", "account_roles.role"],
                              name="fk_account_ledger_role", ondelete="RESTRICT", onupdate="RESTRICT"),

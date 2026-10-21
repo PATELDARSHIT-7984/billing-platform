@@ -1,3 +1,4 @@
+from sqlalchemy import CheckConstraint, ForeignKeyConstraint
 from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -6,6 +7,16 @@ from api.config.database import Base
 
 class Purchase(Base):
     __tablename__ = "purchases"
+    account_ledger_id = Column(Integer, nullable=True, index=True)
+    account_role = Column(String(20), nullable=True)
+    __table_args__ = (
+        ForeignKeyConstraint(['account_ledger_id', 'account_role'], ['account_ledgers.id', 'account_ledgers.role'],
+                             name='fk_purchases_account_ledger_role', match='FULL', ondelete='RESTRICT', onupdate='RESTRICT'),
+        CheckConstraint("account_role IS NULL OR account_role IN ('SUPPLIER', 'PURCHASE_VENDOR')",
+                        name='ck_purchases_account_role'),
+        CheckConstraint('(account_ledger_id IS NULL) = (account_role IS NULL)',
+                        name='ck_purchases_account_reference_pair'),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     bill_no = Column(String(100), unique=True, nullable=False, index=True)

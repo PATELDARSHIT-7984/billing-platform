@@ -117,6 +117,7 @@ def update_rojmel(db: Session, rojmel_id: int, rojmel_in: RojmelUpdate) -> Rojme
         )
         old_supplier_id = old_supplier.id if old_supplier is not None else None
         old_net_amount = rojmel.net_amount
+        old_identity = (rojmel.customer_id, rojmel.party_id)
         old_customer_id, old_customer_effect = rojmel.customer_id, _customer_effect(rojmel)
 
         bank_id = rojmel_in.cash_bank_id if rojmel_in.cash_bank_id is not None else rojmel.cash_bank_id
@@ -129,6 +130,10 @@ def update_rojmel(db: Session, rojmel_id: int, rojmel_in: RojmelUpdate) -> Rojme
         update_payload = rojmel_in.model_dump(exclude_unset=True, exclude={"receipt_no", "net_amount"})
         for key, value in update_payload.items():
             setattr(rojmel, key, value)
+
+        # Phase 3A references are snapshots, not runtime posting authority.
+        if (rojmel.customer_id, rojmel.party_id) != old_identity:
+            rojmel.account_ledger_id = rojmel.account_role = None
 
         rojmel_validation.validate_customer_account(db, rojmel.party_id, rojmel.customer_id, rojmel.transaction_type,
             require_active=rojmel.customer_id != old_customer_id)
