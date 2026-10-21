@@ -17,6 +17,8 @@ from api.config.database import Base
 
 class Quotation(Base):
     __tablename__ = "quotations"
+    account_id = Column(Integer, ForeignKey("accounts.id", name="fk_quotations_account_id",
+                                           ondelete="RESTRICT", onupdate="RESTRICT"), nullable=True, index=True)
 
     id = Column(Integer, primary_key=True, index=True)
 

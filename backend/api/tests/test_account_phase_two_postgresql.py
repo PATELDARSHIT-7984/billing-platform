@@ -36,7 +36,7 @@ def test_deployment_copy_baseline_integrity(postgres_database, tmp_path, baselin
     elif baseline_case == 'malformed':
         baseline.write_bytes(b'{')
     result = subprocess.run([os.environ['BILLING_ALEMBIC_PYTHON'],'-B','-m','alembic',
-                             '-c',str(deployment / 'alembic.ini'),'upgrade','head'],
+                             '-c',str(deployment / 'alembic.ini'),'upgrade',HEAD],
         cwd=tmp_path, env=dict(os.environ, DATABASE_URL=engine.url.render_as_string(hide_password=False)),
         capture_output=True,text=True,timeout=60)
     assert (result.returncode == 0) == (baseline_case == 'approved'), 'Unexpected migration result; connection-bearing output suppressed'

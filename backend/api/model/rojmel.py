@@ -1,3 +1,4 @@
+from sqlalchemy import ForeignKeyConstraint
 from sqlalchemy import Column, Integer, String, Date, Numeric, ForeignKey, Enum, Text, CheckConstraint
 from api.config.database import Base
 import enum
@@ -13,7 +14,21 @@ class TransactionType(str, enum.Enum):
 class Rojmel(Base):
     # Daily cash/bank ledger entry (a receipt or payment record).
     __tablename__ = "rojmel"
-    __table_args__ = (CheckConstraint("party_id IS NULL OR customer_id IS NULL", name="ck_rojmel_one_account"),)
+    account_ledger_id = Column(Integer, nullable=True, index=True)
+    account_role = Column(String(20), nullable=True)
+    __table_args__ = (
+        CheckConstraint("party_id IS NULL OR customer_id IS NULL", name="ck_rojmel_one_account"),
+        ForeignKeyConstraint(['account_ledger_id', 'account_role'], ['account_ledgers.id', 'account_ledgers.role'],
+                             name='fk_rojmel_account_ledger_role', match='FULL', ondelete='RESTRICT', onupdate='RESTRICT'),
+        CheckConstraint("account_role IS NULL OR account_role IN ('CUSTOMER', 'SUPPLIER', 'PURCHASE_VENDOR')",
+                        name='ck_rojmel_account_role'),
+        CheckConstraint('(account_ledger_id IS NULL) = (account_role IS NULL)',
+                        name='ck_rojmel_account_reference_pair'),
+        CheckConstraint("account_ledger_id IS NULL OR "
+                        "(customer_id IS NOT NULL AND party_id IS NULL AND account_role = 'CUSTOMER') OR "
+                        "(party_id IS NOT NULL AND customer_id IS NULL AND account_role IN ('SUPPLIER','PURCHASE_VENDOR'))",
+                        name='ck_rojmel_account_context'),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     transaction_type = Column(Enum(TransactionType), nullable=False)

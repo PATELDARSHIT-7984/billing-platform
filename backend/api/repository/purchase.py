@@ -79,6 +79,9 @@ def create_purchase(db: Session, data: dict) -> Purchase:
 
 
 def update_purchase(db: Session, purchase: Purchase, data: dict) -> Purchase:
+    # Phase 3A: invalidate the snapshot only when the legacy identity changes.
+    if "party_id" in data and data["party_id"] != purchase.party_id:
+        purchase.account_ledger_id = purchase.account_role = None
     for field_name, field_value in data.items():
         setattr(purchase, field_name, field_value)
     db.flush()
