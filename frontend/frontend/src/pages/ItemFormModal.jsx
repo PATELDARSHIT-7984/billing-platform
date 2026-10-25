@@ -20,6 +20,7 @@ const EMPTY_FORM = {
   mrp: '0',
   cgst: '9',
   sgst: '9',
+  igst: '0',
   description: '',
   // Not editable here — these are set automatically by Purchase/Sales Entry.
   // Kept in state (read from the fetched record) purely so Edit submits can
@@ -39,14 +40,15 @@ function validate(form) {
 
   if (!form.unit || !String(form.unit).trim()) errors.unit = 'Unit is required.';
 
- const numericFields = [
-  ['current_stock', 'Current stock'],
-  ['purchase_price', 'Purchase price'],
-  ['sale_price', 'Sale price'],
-  ['mrp', 'MRP'],
-  ['cgst', 'CGST'],
-  ['sgst', 'SGST'],
-];
+  const numericFields = [
+    ['current_stock', 'Current stock'],
+    ['purchase_price', 'Purchase price'],
+    ['sale_price', 'Sale price'],
+    ['mrp', 'MRP'],
+    ['cgst', 'CGST'],
+    ['sgst', 'SGST'],
+    ['igst', 'IGST'],
+  ];
   numericFields.forEach(([field, label]) => {
     if (form[field] !== '' && Number(form[field]) < 0) {
       errors[field] = `${label} cannot be negative.`;
@@ -89,8 +91,9 @@ export default function ItemFormModal({
         purchase_price: String(initialData.purchase_price ?? 0),
         sale_price: String(initialData.sale_price ?? 0),
         mrp: String(initialData.mrp ?? 0),
-        cgst: String(initialData.cgst ?? 9),
-        sgst: String(initialData.sgst ?? 9),
+        cgst: String(initialData.cgst ?? (Number(initialData.igst) > 0 ? 0 : 9)),
+        sgst: String(initialData.sgst ?? (Number(initialData.igst) > 0 ? 0 : 9)),
+        igst: String(initialData.igst ?? 0),
         description: initialData.description || '',
         last_purchase_date: initialData.last_purchase_date || null,
         last_sale_date: initialData.last_sale_date || null,
@@ -102,7 +105,16 @@ export default function ItemFormModal({
   }, [open, mode, initialData]);
 
   const setField = (field) => (value) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
+    setForm((prev) => {
+      const next = { ...prev, [field]: value };
+      if ((field === 'cgst' || field === 'sgst') && Number(value) > 0) {
+        next.igst = '0';
+      } else if (field === 'igst' && Number(value) > 0) {
+        next.cgst = '0';
+        next.sgst = '0';
+      }
+      return next;
+    });
     if (errors[field]) setErrors((prev) => ({ ...prev, [field]: '' }));
   };
 
@@ -156,6 +168,7 @@ export default function ItemFormModal({
       mrp: Number(form.mrp) || 0,
       cgst: Number(form.cgst) || 0,
       sgst: Number(form.sgst) || 0,
+      igst: Number(form.igst) || 0,
       description: form.description.trim() || null,
       last_purchase_date: form.last_purchase_date,
       last_sale_date: form.last_sale_date,
@@ -262,6 +275,7 @@ export default function ItemFormModal({
             value={form.cgst}
             onChange={setField('cgst')}
             error={errors.cgst}
+            disabled={Number(form.igst) > 0}
           />
           <FormInput
             label="SGST Rate %"
@@ -270,6 +284,16 @@ export default function ItemFormModal({
             value={form.sgst}
             onChange={setField('sgst')}
             error={errors.sgst}
+            disabled={Number(form.igst) > 0}
+          />
+          <FormInput
+            label="IGST Rate %"
+            name="igst"
+            type="number"
+            value={form.igst}
+            onChange={setField('igst')}
+            error={errors.igst}
+            disabled={Number(form.cgst) > 0 || Number(form.sgst) > 0}
           />
         </FormRow>
 
@@ -301,6 +325,7 @@ export default function ItemFormModal({
             onChange={setField('mrp')}
             error={errors.mrp}
           />
+          <div style={{ flex: 1 }} />
         </FormRow>
 
         <FormTextarea
@@ -308,16 +333,16 @@ export default function ItemFormModal({
           name="description"
           value={form.description}
           onChange={setField('description')}
-          rows={2}
+          rows={3}
         />
 
         {mode === 'edit' && (
           <div className="item-form-modal__meta">
             <span>
-              Last Purchase Date: <strong>{formatDate(form.last_purchase_date)}</strong>
+              Last Purchase: <strong>{formatDate(form.last_purchase_date)}</strong>
             </span>
             <span>
-              Last Sale Date: <strong>{formatDate(form.last_sale_date)}</strong>
+              Last Sale: <strong>{formatDate(form.last_sale_date)}</strong>
             </span>
           </div>
         )}

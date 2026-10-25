@@ -17,7 +17,7 @@ import {
 } from '../services/billService';
 import { extractErrorMessage } from '../services/api';
 
-import { formatCurrency } from '../utils/calculations';
+import { formatCurrency, formatPhoneNumber } from '../utils/calculations';
 
 import './PurchaseHistory.css';
 
@@ -135,9 +135,14 @@ export default function SalesHistory() {
       key: 'customer_name',
       label: 'Customer',
       render: (row) => (
-        row.customer_name
-        || row.party_name
-        || '—'
+        <div>
+          <div>{row.customer_name || row.party_name || '—'}</div>
+          {row.mobile && (
+            <div style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>
+              {formatPhoneNumber(row.mobile)}
+            </div>
+          )}
+        </div>
       ),
     },
     {

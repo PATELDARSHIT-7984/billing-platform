@@ -21,6 +21,7 @@ import {
   createBill,
   fetchBillById,
   updateBill,
+  fetchNextBillNumbers,
 } from '../services/billService';
 import { extractErrorMessage } from '../services/api';
 import { UNIT_OPTIONS } from '../config/units';
@@ -144,7 +145,20 @@ export default function SalesEntry() {
 
   useEffect(() => {
     loadItems();
-  }, []);
+    if (!editId && !managed.restoring) {
+      fetchNextBillNumbers()
+        .then((data) => {
+          if (data?.invoice_no) {
+            setDetails((previous) => ({
+              ...previous,
+              invoice_no: data.invoice_no,
+              order_no: data.order_no || previous.order_no,
+            }));
+          }
+        })
+        .catch(() => {});
+    }
+  }, [editId]);
 
 
 
@@ -390,6 +404,19 @@ export default function SalesEntry() {
     setEditingIndex(null);
     setDetailErrors({});
     setItemErrors({});
+    if (!editId) {
+      fetchNextBillNumbers()
+        .then((data) => {
+          if (data?.invoice_no) {
+            setDetails((previous) => ({
+              ...previous,
+              invoice_no: data.invoice_no,
+              order_no: data.order_no || previous.order_no,
+            }));
+          }
+        })
+        .catch(() => {});
+    }
   };
 
   const saveSale = () => {

@@ -1,6 +1,6 @@
 import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
-import { formatCurrency } from '../utils/calculations';
+import { formatCurrency, formatPhoneNumber } from '../utils/calculations';
 import './PurchaseDetailModal.css';
 
 export default function QuotationDetailModal({ open, loading, quotation, onClose }) {
@@ -20,7 +20,7 @@ export default function QuotationDetailModal({ open, loading, quotation, onClose
           <div className="purchase-detail__meta">
             <div><span className="purchase-detail__meta-label">Customer</span><span className="purchase-detail__meta-value">{quotation.customer_name || '—'}</span></div>
             <div><span className="purchase-detail__meta-label">Quotation Date</span><span className="purchase-detail__meta-value">{new Date(quotation.quotation_date).toLocaleDateString('en-IN')}</span></div>
-            <div><span className="purchase-detail__meta-label">Contact</span><span className="purchase-detail__meta-value">{quotation.contact_no || '—'}</span></div>
+            <div><span className="purchase-detail__meta-label">Contact</span><span className="purchase-detail__meta-value">{formatPhoneNumber(quotation.contact_no)}</span></div>
             <div><span className="purchase-detail__meta-label">Valid Until</span><span className="purchase-detail__meta-value">{quotation.due_date ? new Date(quotation.due_date).toLocaleDateString('en-IN') : '—'}</span></div>
           </div>
           <div className="purchase-detail__table-wrap">
