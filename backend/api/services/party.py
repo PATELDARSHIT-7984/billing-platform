@@ -3,6 +3,8 @@ from typing import Optional
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from api.services.gstin_identity import save_account
+from api.utils.gstin import normalize_gstin
 from api.model.party import Party
 from api.utils.account_balance import signed_balance, balance_after_delta
 from api.repository import party as party_repo
@@ -30,16 +32,12 @@ def _clean_text(value) -> str | None:
     return value.strip() if isinstance(value, str) and value.strip() else None
 
 
-def _normalize_gstin(value) -> str | None:
-    return value.strip().upper() if value else None
-
-
 def _normalize_pan(value) -> str | None:
     return value.strip().upper() if value else None
 
 
 def _pan_from_gstin(gstin: str | None) -> str | None:
-    clean_gstin = _normalize_gstin(gstin)
+    clean_gstin = normalize_gstin(gstin)
     return clean_gstin[2:12] if clean_gstin and len(clean_gstin) >= 12 else None
 
 
@@ -52,22 +50,36 @@ def apply_party_balance_delta(
     party_id: int,
     amount_delta: Decimal | int | float,
 ) -> Party:
-    """Apply a signed payable delta; the caller owns commit and rollback."""
+    """Apply a signed payable delta to Party and synchronized AccountLedger in lockstep."""
     party = party_repo.get_party_for_balance_update(db, party_id)
     if not party:
+        from api.model.legacy_account_map import LegacyAccountMap
+        from api.services.account_provisioning import apply_account_ledger_delta
+        mapping = db.query(LegacyAccountMap).filter_by(legacy_source="party", legacy_id=party_id).first()
+        if mapping:
+            return apply_account_ledger_delta(db, mapping.account_ledger_id, amount_delta, sync_legacy=True)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Party not found")
 
     amount, direction = balance_after_delta(party.current_balance, party.current_balance_type, amount_delta)
-    return party_repo.set_party_current_balance(
+    pty = party_repo.set_party_current_balance(
         db,
         party,
         amount,
         direction,
     )
 
+    # Synchronize AccountLedger
+    from api.model.legacy_account_map import LegacyAccountMap
+    from api.services.account_provisioning import apply_account_ledger_delta
+    mapping = db.query(LegacyAccountMap).filter_by(legacy_source="party", legacy_id=party_id).first()
+    if mapping:
+        apply_account_ledger_delta(db, mapping.account_ledger_id, amount_delta, sync_legacy=False)
+
+    return pty
+
 
 def create_party(db: Session, data: PartyCreate) -> Party:
-    gstin = _normalize_gstin(data.gstin)
+    gstin = normalize_gstin(data.gstin)
     pan_card = _normalize_pan(data.pan_card)
 
     if gstin and not pan_card:
@@ -97,10 +109,7 @@ def create_party(db: Session, data: PartyCreate) -> Party:
         "is_active": True,
     }
 
-    new_party = party_repo.create_party(db, data=party_payload)
-    db.commit()
-    db.refresh(new_party)
-    return new_party
+    return save_account(db, "party", lambda: party_repo.create_party(db, data=party_payload))
 
 
 def get_parties(
@@ -127,7 +136,7 @@ def update_party_by_id(
     update_data = party_data.model_dump(exclude_unset=True)
 
     if "gstin" in update_data:
-        update_data["gstin"] = _normalize_gstin(update_data.get("gstin"))
+        update_data["gstin"] = normalize_gstin(update_data.get("gstin"))
         if update_data["gstin"]:
             party_validation.validate_gstin_is_unique(
                 db, gstin=update_data["gstin"], exclude_id=party_id
@@ -158,16 +167,15 @@ def update_party_by_id(
         amount, direction = balance_after_delta(party.current_balance, party.current_balance_type, new_signed - old_signed)
         update_data.update(current_balance=amount, current_balance_type=direction)
 
-    updated_party = party_repo.update_party(db, party=party, data=update_data)
-    db.commit()
-    db.refresh(updated_party)
-    return updated_party
+    return save_account(db, "party", lambda: party_repo.update_party(db, party=party, data=update_data))
 
 
 def delete_party_by_id(db: Session, party_id: int):
     party = party_validation.validate_and_get_active_party(db, party_id=party_id)
 
     party_repo.deactivate_party(db, party=party)
+    from api.services.account_provisioning import deactivate_legacy_account
+    deactivate_legacy_account(db, "party", party_id)
     db.commit()
 
     return {"message": f"Party '{party.name}' deleted successfully."}

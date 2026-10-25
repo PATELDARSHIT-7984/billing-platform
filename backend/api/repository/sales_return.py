@@ -118,6 +118,9 @@ def create_sales_return(db: Session, data: dict) -> SalesReturn:
 
 
 def update_sales_return(db: Session, record: SalesReturn, data: dict) -> SalesReturn:
+    # Phase 3A: invalidate the snapshot only when the legacy identity changes.
+    if "customer_id" in data and data["customer_id"] != record.customer_id:
+        record.account_ledger_id = record.account_role = None
     for field_name, field_value in data.items():
         setattr(record, field_name, field_value)
     db.flush()

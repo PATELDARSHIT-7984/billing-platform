@@ -20,7 +20,7 @@ def test_create_customer_rejects_duplicate_gstin(
 
     assert first.status_code == 201, first.text
     assert second.status_code == 400
-    assert second.json()["detail"] == "GSTIN already exists"
+    assert second.json()["detail"] == "GSTIN is already used by another account."
 
 
 def test_create_customer_rejects_duplicate_pan(

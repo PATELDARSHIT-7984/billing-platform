@@ -1,3 +1,4 @@
+from sqlalchemy import CheckConstraint, ForeignKeyConstraint
 from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -6,6 +7,16 @@ from api.config.database import Base
 
 class Purchase(Base):
     __tablename__ = "purchases"
+    account_ledger_id = Column(Integer, nullable=True, index=True)
+    account_role = Column(String(20), nullable=True)
+    __table_args__ = (
+        ForeignKeyConstraint(['account_ledger_id', 'account_role'], ['account_ledgers.id', 'account_ledgers.role'],
+                             name='fk_purchases_account_ledger_role', match='FULL', ondelete='RESTRICT', onupdate='RESTRICT'),
+        CheckConstraint("account_role IS NULL OR account_role IN ('SUPPLIER', 'PURCHASE_VENDOR')",
+                        name='ck_purchases_account_role'),
+        CheckConstraint('(account_ledger_id IS NULL) = (account_role IS NULL)',
+                        name='ck_purchases_account_reference_pair'),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     bill_no = Column(String(100), unique=True, nullable=False, index=True)
@@ -13,7 +24,7 @@ class Purchase(Base):
     bill_date = Column(Date, nullable=False, default=func.current_date())
     due_term = Column(Integer, nullable=True)
     due_date = Column(Date, nullable=True)
-    party_id = Column(Integer, ForeignKey("parties.id"), nullable=False, index=True)
+    party_id = Column(Integer, nullable=True, index=True)
     is_gst = Column(Boolean, nullable=False, default=True)
     contact_person = Column(String(150), nullable=True)
     contact_no = Column(String(30), nullable=True)
@@ -40,7 +51,13 @@ class Purchase(Base):
     updated_at = Column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
     created_by = Column(Integer, nullable=True)
 
-    party = relationship("Party")
+    account_ledger = relationship("AccountLedger", foreign_keys=[account_ledger_id])
+
+    @property
+    def party(self):
+        if self.account_ledger and self.account_ledger.account_role:
+            return self.account_ledger.account_role.account
+        return None
     items = relationship(
         "PurchaseItem",
         back_populates="purchase",

@@ -1,3 +1,4 @@
+from api.services.account_provisioning import resolve_account_reference
 from api.validation.done_by import validate_done_by_snapshot
 from api.utils.rounding import round_half_up
 from datetime import timedelta
@@ -264,6 +265,7 @@ def create_quotation(
         "show_shipping_address_on_bill":
             quotation_data.show_shipping_address_on_bill,
         "is_active": True,
+        "account_id": resolve_account_reference(db, "customer", quotation_data.customer_id),
     }
 
     quotation = quotation_repo.create_quotation(
@@ -582,6 +584,10 @@ def update_quotation_by_id(
             "grand_total": grand_total,
         })
 
+    effective_customer_id = update_payload.get("customer_id", quotation.customer_id)
+    if effective_customer_id:
+        update_payload["account_id"] = resolve_account_reference(db, "customer", effective_customer_id)
+
     updated_quotation = quotation_repo.update_quotation(
         db,
         quotation,
@@ -616,4 +622,13 @@ def delete_quotation_by_id(
 
     return {
         "message": "Quotation deleted successfully",
+    }
+
+
+def get_next_quotation_numbers(db: Session) -> dict:
+    """Return next auto-generated quotation number and order number."""
+    from api.model.quotation import Quotation
+    return {
+        "quotation_no": _next_document_number(db, Quotation.quotation_no, "QTN"),
+        "order_no": _next_document_number(db, Quotation.order_no, "QO"),
     }

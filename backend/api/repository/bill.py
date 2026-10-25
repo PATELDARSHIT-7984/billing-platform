@@ -105,6 +105,9 @@ def create_bill(db: Session, data: dict) -> Bill:
 
 
 def update_bill(db: Session, bill: Bill, data: dict) -> Bill:
+    # Phase 3A: invalidate the snapshot only when the legacy identity changes.
+    if "customer_id" in data and data["customer_id"] != bill.customer_id:
+        bill.account_ledger_id = bill.account_role = None
     for field_name, field_value in data.items():
         setattr(bill, field_name, field_value)
     db.flush()

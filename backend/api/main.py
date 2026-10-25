@@ -24,6 +24,7 @@ from api.router.purchase_return import router as purchase_return_router
 from api.router.quotation import router as quotation_router
 from api.router.rojmel import router as rojmel_router
 from api.router.sales_return import router as sales_return_router
+from api.router.account import router as account_router
 
 app = FastAPI(title="Billing API")
 
@@ -59,6 +60,7 @@ for router in (
     quotation_router,
     rojmel_router,
     sales_return_router,
+    account_router,
 ):
     app.include_router(router)
 

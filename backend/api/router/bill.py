@@ -12,6 +12,11 @@ router = APIRouter(prefix="/bills", tags=["Bills"])
 def create_bill(bill_in: BillCreate, db: Session = Depends(get_db)):
     return bill_service.create_bill(db, bill_in)
 
+@router.get("/next-numbers")
+def get_next_bill_numbers(db: Session = Depends(get_db)):
+    return bill_service.get_next_bill_numbers(db)
+
+
 @router.get("/{bill_id}", response_model=BillDetailResponse)
 def get_bill(bill_id: int, db: Session = Depends(get_db)):
     return bill_service.get_bill_by_id(db, bill_id)

@@ -14,7 +14,7 @@ def test_update_keeps_own_normalized_tax_ids(client, customer_api):
 
 
 @pytest.mark.parametrize('field,value,message', [
-    ('gstin', '24ABCDE1234F1Z5', 'GSTIN already exists'),
+    ('gstin', '24ABCDE1234F1Z5', 'GSTIN is already used by another account.'),
     ('pan_card', 'ABCDE1234F', 'PAN already exists'),
 ])
 @pytest.mark.parametrize('operation', ['create', 'update'])
@@ -157,7 +157,7 @@ def test_update_customer_rejects_another_customers_gstin(
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "GSTIN already exists"
+    assert response.json()["detail"] == "GSTIN is already used by another account."
 
 
 def test_update_customer_rejects_another_customers_pan(

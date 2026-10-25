@@ -1,3 +1,4 @@
+from api.services.account_provisioning import resolve_ledger_reference
 from api.validation.done_by import validate_done_by_snapshot
 from api.utils.rounding import round_half_up
 from collections import defaultdict
@@ -739,6 +740,10 @@ def create_purchase_return(
             "is_active": True,
         }
 
+        ledger_id, role = resolve_ledger_reference(db, "party", data.party_id)
+        record_payload["account_ledger_id"] = ledger_id
+        record_payload["account_role"] = role
+
         record = (
             purchase_return_repo
             .create_purchase_return(
@@ -1403,6 +1408,12 @@ def update_purchase_return_by_id(
         # =========================================================================
         # SAVE
         # =========================================================================
+
+        effective_party_id = update_payload.get("party_id", record.party_id)
+        if effective_party_id:
+            ledger_id, role = resolve_ledger_reference(db, "party", effective_party_id)
+            update_payload["account_ledger_id"] = ledger_id
+            update_payload["account_role"] = role
 
         updated_record = (
             purchase_return_repo

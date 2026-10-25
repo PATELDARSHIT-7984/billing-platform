@@ -1,3 +1,4 @@
+from sqlalchemy import CheckConstraint, ForeignKeyConstraint
 from sqlalchemy import (
     Boolean,
     Column,
@@ -17,6 +18,16 @@ from api.config.database import Base
 
 class PurchaseReturn(Base):
     __tablename__ = "purchase_returns"
+    account_ledger_id = Column(Integer, nullable=True, index=True)
+    account_role = Column(String(20), nullable=True)
+    __table_args__ = (
+        ForeignKeyConstraint(['account_ledger_id', 'account_role'], ['account_ledgers.id', 'account_ledgers.role'],
+                             name='fk_purchase_returns_account_ledger_role', match='FULL', ondelete='RESTRICT', onupdate='RESTRICT'),
+        CheckConstraint("account_role IS NULL OR account_role IN ('SUPPLIER', 'PURCHASE_VENDOR')",
+                        name='ck_purchase_returns_account_role'),
+        CheckConstraint('(account_ledger_id IS NULL) = (account_role IS NULL)',
+                        name='ck_purchase_returns_account_reference_pair'),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
 
@@ -30,8 +41,7 @@ class PurchaseReturn(Base):
 
     party_id = Column(
         Integer,
-        ForeignKey("parties.id"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
 
@@ -80,7 +90,13 @@ class PurchaseReturn(Base):
     )
     created_by = Column(Integer, nullable=True)
 
-    party = relationship("Party")
+    account_ledger = relationship("AccountLedger", foreign_keys=[account_ledger_id])
+
+    @property
+    def party(self):
+        if self.account_ledger and self.account_ledger.account_role:
+            return self.account_ledger.account_role.account
+        return None
 
     items = relationship(
         "PurchaseReturnItem",

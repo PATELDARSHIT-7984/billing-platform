@@ -1,9 +1,11 @@
 from typing import Optional
 from decimal import Decimal, ROUND_HALF_UP
 from fastapi import HTTPException
-from api.utils.account_balance import signed_balance, balance_after_delta
 from sqlalchemy.orm import Session
 
+from api.services.gstin_identity import save_account
+from api.utils.gstin import normalize_gstin
+from api.utils.account_balance import signed_balance, balance_after_delta
 from api.repository import customer as customer_repo
 from api.validation import customer as customer_validation
 
@@ -26,7 +28,7 @@ def _generate_customer_code(db: Session) -> str:
 
 def _normalize_and_extract_pan(gstin: str | None, pan_card: str | None) -> tuple[str | None, str | None]:
     """Cleans GSTIN and PAN strings and derives PAN from GSTIN if missing."""
-    clean_gstin = gstin.strip().upper() if gstin else None
+    clean_gstin = normalize_gstin(gstin)
     clean_pan = pan_card.strip().upper() if pan_card else None
 
     if clean_gstin and not clean_pan and len(clean_gstin) == 15:
@@ -73,10 +75,7 @@ def create_customer(db: Session, customer_data):
         "is_active": True,
     }
 
-    new_customer = customer_repo.create_customer(db, data=customer_payload)
-    db.commit()
-    db.refresh(new_customer)
-    return new_customer
+    return save_account(db, "customer", lambda: customer_repo.create_customer(db, data=customer_payload))
 
 
 def get_all_customers(
@@ -132,41 +131,54 @@ def update_customer(db: Session, customer_id: int, customer_data):
     if customer_data.is_active is not None:
         update_payload["is_active"] = customer_data.is_active
 
-    updated_customer = customer_repo.update_customer(db, customer=customer, data=update_payload)
-    db.commit()
-    db.refresh(updated_customer)
-    return updated_customer
+    return save_account(db, "customer", lambda: customer_repo.update_customer(db, customer=customer, data=update_payload))
 
 
 def delete_customer(db: Session, customer_id: int):
     customer = customer_validation.validate_and_get_active_customer(db, customer_id=customer_id)
 
     customer_repo.deactivate_customer(db, customer=customer)
+    from api.services.account_provisioning import deactivate_legacy_account
+    deactivate_legacy_account(db, "customer", customer_id)
     db.commit()
 
     return {"message": f"Customer '{customer.customer_name}' deleted successfully"}
 
 
-def apply_customer_balance_delta(db, customer_id, delta):
-    """Caller owns commit/rollback; historical reversals allow inactive Customers."""
+def apply_customer_balance_delta(db: Session, customer_id: int, delta):
+    """Apply signed balance delta to customer and synchronized AccountLedger in lockstep."""
     customer = customer_repo.get_customer_for_balance_update(db, customer_id)
     if customer is None:
+        # Check if direct AccountLedger or mapped ledger
+        from api.model.legacy_account_map import LegacyAccountMap
+        from api.services.account_provisioning import apply_account_ledger_delta
+        mapping = db.query(LegacyAccountMap).filter_by(legacy_source="customer", legacy_id=customer_id).first()
+        if mapping:
+            return apply_account_ledger_delta(db, mapping.account_ledger_id, delta, sync_legacy=True)
         raise HTTPException(404, "Customer not found")
+
     amount, direction = balance_after_delta(customer.current_balance, customer.current_balance_type, delta)
-    return customer_repo.update_customer(db, customer, {
+    cust = customer_repo.update_customer(db, customer, {
         "current_balance": amount, "current_balance_type": direction,
     })
 
+    # Synchronize AccountLedger
+    from api.model.legacy_account_map import LegacyAccountMap
+    from api.services.account_provisioning import apply_account_ledger_delta
+    mapping = db.query(LegacyAccountMap).filter_by(legacy_source="customer", legacy_id=customer_id).first()
+    if mapping:
+        apply_account_ledger_delta(db, mapping.account_ledger_id, delta, sync_legacy=False)
 
-def replace_customer_effect(db, old_id=None, old_effect=0, new_id=None, new_effect=0):
+    return cust
+
+
+def replace_customer_effect(db: Session, old_id=None, old_effect=0, new_id=None, new_effect=0):
     """Replace one document's signed effect, including account reassignment."""
     changes = {}
     for customer_id, effect, sign in ((old_id, old_effect, -1), (new_id, new_effect, 1)):
         if customer_id is not None:
-            # Match NUMERIC(18,2) conversion used by the PostgreSQL cutover.
             booked = Decimal(str(effect)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
             changes[customer_id] = changes.get(customer_id, Decimal(0)) + sign * booked
-    # Every multi-account posting acquires Customer locks in ascending ID order.
     for customer_id, delta in sorted(changes.items()):
         if delta:
             apply_customer_balance_delta(db, customer_id, delta)

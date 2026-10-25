@@ -12,6 +12,8 @@ from sqlalchemy.engine import make_url
 
 from api.config.database import DATABASE_URL
 from api.model.bill import Bill
+from api.model.bill_item import BillItem  # Register Bill's relationship for subset runs.
+from api.model.item_master import ItemMaster  # Referenced by BillItem/SalesReturnItem.
 from api.model.sales_return import SalesReturn
 
 
@@ -62,9 +64,9 @@ def test_customer_accounting_postgresql_migration():
                     grand_total=total, amount_in_words='Fixture', is_active=active))
                 conn.execute(SalesReturn.__table__.insert().values(return_no=number, customer_id=1,
                     return_date=date.today(), grand_total=1500 if active else 999, return_reason='Fixture', is_active=active))
-        migrate('upgrade', 'head')
+        migrate('upgrade', 'f2b61d9a430c')
         assert balances() == [(4500, 'Debit'), (0, 'Credit')]
-        migrate('upgrade', 'head') # no second posting
+        migrate('upgrade', 'f2b61d9a430c') # no second posting
         assert balances() == [(4500, 'Debit'), (0, 'Credit')]
         with engine.connect() as conn:
             assert any(fk['constrained_columns'] == ['customer_id'] and fk['referred_table'] == 'customers'
@@ -72,7 +74,7 @@ def test_customer_accounting_postgresql_migration():
             assert any(c['name'] == 'ck_rojmel_one_account' for c in inspect(conn).get_check_constraints('rojmel'))
         migrate('downgrade', 'b8f2d9a73106')
         assert balances() == [(1000, 'Debit'), (0, 'Credit')]
-        migrate('upgrade', 'head')
+        migrate('upgrade', 'f2b61d9a430c')
         assert balances() == [(4500, 'Debit'), (0, 'Credit')]
         with engine.begin() as conn:
             conn.execute(text("INSERT INTO banks (name,is_active) VALUES ('Cash',true)"))
@@ -83,10 +85,10 @@ def test_customer_accounting_postgresql_migration():
         migrate('downgrade', 'b8f2d9a73106', succeeds=False)
         assert balances() == [(4500, 'Debit'), (0, 'Credit')]
         with engine.begin() as conn:
-            assert conn.execute(text('SELECT version_num FROM alembic_version')).scalar_one() == 'c4a9e7120d35'
+            assert conn.execute(text('SELECT version_num FROM alembic_version')).scalar_one() == 'f2b61d9a430c'
             conn.execute(text("DELETE FROM rojmel WHERE receipt_no='Guard'"))
         migrate('downgrade', '7414692a3849')
-        migrate('upgrade', 'head')
+        migrate('upgrade', 'f2b61d9a430c')
         assert balances() == [(3500, 'Debit'), (0, 'Credit')] # opening removed by foundation downgrade
     finally:
         if engine is not None:
