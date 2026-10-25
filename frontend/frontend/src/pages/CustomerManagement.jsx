@@ -8,10 +8,15 @@ import CustomerFormModal from './CustomerFormModal';
 import { useToast } from '../context/ToastContext';
 import { fetchCustomers, fetchCustomerById, createCustomer, updateCustomer, deleteCustomer } from '../services/customerService';
 import { extractErrorMessage } from '../services/api';
+import { formatPhoneNumber } from '../utils/calculations';
 
 const COLUMNS = [
   { key: 'customer_name', label: 'Customer Name' },
-  { key: 'mobile', label: 'Mobile' },
+  {
+    key: 'mobile',
+    label: 'Mobile',
+    render: (row) => formatPhoneNumber(row.mobile, row.country_code),
+  },
   {
     key: 'location',
     label: 'City / State',

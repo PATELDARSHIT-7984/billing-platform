@@ -114,7 +114,7 @@ function ViewAll({ type: initialType, ranking, dates, search }) {
     <Heading title={ranking ? 'Business partner ranking' : 'Browse accounts'} subtitle={ranking ? `Ranked by net ${type === 'supplier' ? 'purchase' : 'sales'}` : 'Search across all accounts, including inactive records.'}>
       <select aria-label="View all account type" value={type} onChange={(e) => setType(e.target.value)}><option value="supplier">Supplier</option><option value="customer">Customer</option></select>
     </Heading>
-    {!ranking && type === 'customer' && <p className="dashboard__pending">Customer balances are shown in the overview. This list shows contact details.</p>}
+    {!ranking && type === 'customer' && <p className="dashboard__pending">Search and browse all customer accounts with live balance indicators.</p>}
     <AccountList key={type} type={type} ranking={ranking} dates={dates} expanded initialSearch={search} />
   </ModalContent>;
 }
@@ -145,9 +145,17 @@ function AccountList({ type, ranking = false, dates, expanded = false, initialSe
       {expanded && !ranking && <>
         <select aria-label="Sort accounts" value={sort} onChange={(e) => { setSort(e.target.value); setPage(1); }}>
           <option value="name_asc">Name A–Z</option><option value="name_desc">Name Z–A</option>
-          {type === 'supplier' && <><option value="balance_desc">Highest Amount</option><option value="balance_asc">Lowest Amount</option></>}
+          <option value="balance_desc">Highest Amount</option><option value="balance_asc">Lowest Amount</option>
         </select>
-        {type === 'supplier' && <select aria-label="Balance filter" value={balance} onChange={(e) => { setBalance(e.target.value); setPage(1); }}><option value="all">All balances</option><option value="payable">Payable</option><option value="advance">Advance</option></select>}
+        {type === 'supplier' ? (
+          <select aria-label="Balance filter" value={balance} onChange={(e) => { setBalance(e.target.value); setPage(1); }}>
+            <option value="all">All balances</option><option value="payable">Payable</option><option value="advance">Advance</option>
+          </select>
+        ) : (
+          <select aria-label="Balance filter" value={balance} onChange={(e) => { setBalance(e.target.value); setPage(1); }}>
+            <option value="all">All balances</option><option value="receivable">Receivable</option><option value="credit">Credit / Advance</option>
+          </select>
+        )}
       </>}
     </div>
     <p className="dashboard__note">Search by name, mobile, address or GSTIN</p>
@@ -161,9 +169,19 @@ function AccountList({ type, ranking = false, dates, expanded = false, initialSe
             {row.is_active === false && <span className="dashboard__inactive">Inactive account</span>}
           </>}
         </div>
-        {(ranking || type === 'supplier') && <div className="dashboard__account-amount"><Money value={ranking ? row.net_amount : row.current_balance} compact={ranking && !expanded} />
-          {!ranking && row.current_balance != null && <span className={`dashboard__badge dashboard__badge--${row.balance_type === 'Credit' ? 'payable' : 'advance'}`}>{row.balance_type === 'Credit' ? 'To pay' : 'Credit with supplier'}</span>}
-        </div>}
+        <div className="dashboard__account-amount"><Money value={ranking ? row.net_amount : row.current_balance} compact={ranking && !expanded} />
+          {!ranking && row.current_balance != null && (
+            <span className={`dashboard__badge dashboard__badge--${
+              type === 'supplier'
+                ? (row.balance_type === 'Credit' ? 'payable' : 'advance')
+                : (row.balance_type === 'Debit' ? 'advance' : 'payable')
+            }`}>
+              {type === 'supplier'
+                ? (row.balance_type === 'Credit' ? 'To pay' : 'Credit with supplier')
+                : (row.balance_type === 'Debit' ? 'Receivable' : 'Customer credit')}
+            </span>
+          )}
+        </div>
       </div>)}</div> : <Empty title={ranking ? 'No business partners found' : `No ${noun} found`} hint="Try a different name, phone, address or GSTIN." />}
       {expanded && <Pagination page={page} totalPages={Math.ceil((request.data?.total || 0) / limit)} total={request.data?.total || 0} pageSize={limit} onPageChange={setPage} />}
     </Status>
@@ -180,7 +198,19 @@ function PartnerSection({ ranking = false, dates, summary }) {
     <Heading title={ranking ? 'Largest trading partners' : 'Account details'} subtitle={ranking ? `Ranked by net ${type === 'supplier' ? 'purchase' : 'sales'}` : 'A clear view of your business accounts'}>
       <select aria-label={ranking ? 'Business partner type' : 'Account type'} value={type} onChange={(e) => setType(e.target.value)}><option value="supplier">Supplier</option><option value="customer">Customer</option></select>
     </Heading>
-    {!ranking && (type === 'supplier' ? <div className="dashboard__account-summary"><div><span>To pay suppliers</span><Money value={summary?.supplier_payable} /></div><div><span>Credit with suppliers</span><Money value={summary?.supplier_advance} /></div></div> : <p className="dashboard__pending">Customer balances are shown above. Browse customer contact details here.</p>)}
+    {!ranking && (
+      type === 'supplier' ? (
+        <div className="dashboard__account-summary">
+          <div><span>To pay suppliers</span><Money value={summary?.supplier_payable} /></div>
+          <div><span>Credit with suppliers</span><Money value={summary?.supplier_advance} /></div>
+        </div>
+      ) : (
+        <div className="dashboard__account-summary">
+          <div><span>Receivable from customers</span><Money value={summary?.customer_receivable} /></div>
+          <div><span>Customer credit / advance</span><Money value={summary?.customer_credit} /></div>
+        </div>
+      )
+    )}
     <AccountList key={ranking ? `${type}-${JSON.stringify(dates)}` : type} type={type} ranking={ranking} dates={dates} />
   </section>;
 }

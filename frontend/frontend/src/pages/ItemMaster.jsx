@@ -113,13 +113,19 @@ export default function ItemMaster() {
       key: 'cgst',
       label: 'CGST %',
       align: 'right',
-      render: (row) => `${row.cgst}%`,
+      render: (row) => (row.cgst && Number(row.cgst) > 0 ? `${row.cgst}%` : '0%'),
     },
     {
       key: 'sgst',
       label: 'SGST %',
       align: 'right',
-      render: (row) => `${row.sgst}%`,
+      render: (row) => (row.sgst && Number(row.sgst) > 0 ? `${row.sgst}%` : '0%'),
+    },
+    {
+      key: 'igst',
+      label: 'IGST %',
+      align: 'right',
+      render: (row) => (row.igst && Number(row.igst) > 0 ? `${row.igst}%` : '0%'),
     },
   ];
 

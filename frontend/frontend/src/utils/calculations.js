@@ -65,3 +65,35 @@ export function formatSignedCurrency(value) {
   const sign = num > 0 ? '+ ' : num < 0 ? '- ' : '';
   return `${sign}${formatCurrency(Math.abs(num))}`;
 }
+
+
+/**
+ * Standardize phone number display format: +91 79845 89945
+ */
+export function formatPhoneNumber(value, countryCode = '+91') {
+  if (!value) return '—';
+  const raw = String(value).trim();
+  const digits = raw.replace(/\D/g, '');
+  if (!digits) return raw || '—';
+
+  let mainNumber = digits;
+  let code = countryCode || '+91';
+
+  if (digits.length === 12 && digits.startsWith('91')) {
+    mainNumber = digits.slice(2);
+    code = '+91';
+  } else if (digits.length === 10) {
+    mainNumber = digits;
+  } else if (digits.length > 10) {
+    mainNumber = digits.slice(-10);
+  }
+
+  if (mainNumber.length === 10) {
+    const part1 = mainNumber.slice(0, 5);
+    const part2 = mainNumber.slice(5);
+    const formattedCode = code.startsWith('+') ? code : `+${code}`;
+    return `${formattedCode} ${part1} ${part2}`;
+  }
+
+  return raw;
+}

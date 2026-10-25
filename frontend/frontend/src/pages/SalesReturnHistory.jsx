@@ -95,9 +95,6 @@ export default function SalesReturnHistory() {
   }
 
   const columns = [
-    { key: 'pdf', label: 'Download PDF', render: (row) => (
-      <PdfDownloadActions type="salesReturn" loadDetail={() => fetchSalesReturnById(row.id)} />
-    ) },
     {
       key: 'return_no',
       label: 'Return No.',
@@ -157,6 +154,13 @@ export default function SalesReturnHistory() {
       align: 'right',
       render: (row) => (
         <strong>{formatCurrency(row.grand_total || 0)}</strong>
+      ),
+    },
+    {
+      key: 'pdf',
+      label: 'Download PDF',
+      render: (row) => (
+        <PdfDownloadActions type="salesReturn" loadDetail={() => fetchSalesReturnById(row.id)} />
       ),
     },
   ];

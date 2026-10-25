@@ -28,3 +28,8 @@ export function updateQuotation(id, payload) {
 export function deleteQuotation(id) {
   return api.delete(`${QUOTATION_ENDPOINT}${id}`).then((res) => res.data);
 }
+
+
+export function fetchNextQuotationNumbers() {
+  return api.get(`${QUOTATION_ENDPOINT}next-numbers`).then((res) => res.data);
+}

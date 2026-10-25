@@ -43,9 +43,6 @@ export default function QuotationHistory() {
   };
 
   const columns = [
-    { key: 'pdf', label: 'Download PDF', render: (row) => (
-      <PdfDownloadActions type="quotation" loadDetail={() => fetchQuotationById(row.id)} />
-    ) },
     { key: 'quotation_no', label: 'Quotation No.', render: (row) => <span className="purchase-history__bill-no">#{row.quotation_no}</span> },
     { key: 'quotation_date', label: 'Date', render: (row) => row.quotation_date ? new Date(row.quotation_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—' },
     { key: 'customer_name', label: 'Customer', render: (row) => row.customer_name || '—' },
@@ -53,6 +50,9 @@ export default function QuotationHistory() {
     { key: 'hsn_codes', label: 'HSN Code', render: (row) => compact(row.hsn_codes) },
     { key: 'total_boxes', label: 'Total Boxes', align: 'right', render: (row) => row.total_boxes ?? 0 },
     { key: 'grand_total', label: 'Grand Total', align: 'right', render: (row) => <strong>{formatCurrency(row.grand_total || 0)}</strong> },
+    { key: 'pdf', label: 'Download PDF', render: (row) => (
+      <PdfDownloadActions type="quotation" loadDetail={() => fetchQuotationById(row.id)} />
+    ) },
   ];
 
   return <div className="page">
