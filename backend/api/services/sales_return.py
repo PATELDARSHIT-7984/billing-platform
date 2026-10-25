@@ -1,3 +1,4 @@
+from api.services.account_provisioning import resolve_ledger_reference
 from api.services.customer import replace_customer_effect
 from api.validation.done_by import validate_done_by_snapshot
 from api.utils.rounding import round_half_up
@@ -777,6 +778,10 @@ def create_sales_return(
         "is_active": True,
     }
 
+    ledger_id, role = resolve_ledger_reference(db, "customer", sales_return_data.customer_id)
+    record_payload["account_ledger_id"] = ledger_id
+    record_payload["account_role"] = role
+
     try:
         record = (
             sales_return_repo
@@ -1470,6 +1475,12 @@ def update_sales_return_by_id(
         # =========================================================================
         # SAVE
         # =========================================================================
+
+        effective_customer_id = update_payload.get("customer_id", record.customer_id)
+        if effective_customer_id:
+            ledger_id, role = resolve_ledger_reference(db, "customer", effective_customer_id)
+            update_payload["account_ledger_id"] = ledger_id
+            update_payload["account_role"] = role
 
         updated_record = (
             sales_return_repo

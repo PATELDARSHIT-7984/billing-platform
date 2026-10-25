@@ -1,4 +1,4 @@
-"""Account foundation with transitional transaction references; no runtime posting cutover."""
+"""Unified Account, AccountRole, and AccountLedger models with runtime posting."""
 from sqlalchemy import (
     Boolean, CheckConstraint, Column, DateTime, Enum, ForeignKey,
     ForeignKeyConstraint, Index, Integer, Numeric, String, Text, UniqueConstraint,
@@ -50,6 +50,26 @@ class Account(Base):
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
     roles = relationship("AccountRole", back_populates="account", passive_deletes="all")
+
+    @property
+    def customer_name(self) -> str:
+        return self.account_name
+
+    @property
+    def name(self) -> str:
+        return self.account_name
+
+    @property
+    def customer_code(self) -> str:
+        return self.account_code
+
+    @property
+    def party_code(self) -> str:
+        return self.account_code
+
+    @property
+    def opening_remark(self) -> str | None:
+        return self.remarks
 
 
 class AccountRole(Base):

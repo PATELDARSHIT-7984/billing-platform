@@ -31,8 +31,7 @@ class Quotation(Base):
 
     customer_id = Column(
         Integer,
-        ForeignKey("customers.id"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
 
@@ -79,7 +78,11 @@ class Quotation(Base):
     )
     created_by = Column(Integer, nullable=True)
 
-    customer = relationship("Customer")
+    account = relationship("Account", foreign_keys=[account_id])
+
+    @property
+    def customer(self):
+        return self.account
 
     items = relationship(
         "QuotationItem",

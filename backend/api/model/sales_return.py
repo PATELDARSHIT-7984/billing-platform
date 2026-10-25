@@ -41,8 +41,7 @@ class SalesReturn(Base):
 
     customer_id = Column(
         Integer,
-        ForeignKey("customers.id"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
 
@@ -92,7 +91,13 @@ class SalesReturn(Base):
     )
     created_by = Column(Integer, nullable=True)
 
-    customer = relationship("Customer")
+    account_ledger = relationship("AccountLedger", foreign_keys=[account_ledger_id])
+
+    @property
+    def customer(self):
+        if self.account_ledger and self.account_ledger.account_role:
+            return self.account_ledger.account_role.account
+        return None
 
     items = relationship(
         "SalesReturnItem",

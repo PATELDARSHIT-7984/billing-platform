@@ -1,4 +1,4 @@
-"""Future Account contracts only: no public endpoints or posting authority."""
+"""Unified Account, AccountRole, AccountLedger, settlement, and contra contracts."""
 from datetime import datetime
 from decimal import Decimal
 from typing import Annotated
@@ -68,7 +68,7 @@ class AccountRoleInput(BaseModel):
 
 
 class AccountCreate(AccountBase):
-    account_code: str = Field(min_length=1, max_length=30)
+    account_code: str | None = Field(default=None, max_length=30)
     roles: list[AccountRoleInput] = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -86,6 +86,14 @@ class AccountCreate(AccountBase):
 
 class AccountUpdate(AccountBase):
     account_name: str | None = Field(default=None, min_length=2, max_length=200)
+    roles: list[AccountRoleInput] | None = None
+
+    @field_validator("roles")
+    @classmethod
+    def unique_roles(cls, roles):
+        if roles is not None and len({entry.role for entry in roles}) != len(roles):
+            raise ValueError("Duplicate account role.")
+        return roles
 
     @model_validator(mode="after")
     def consistent_tax_identity(self):
@@ -154,3 +162,26 @@ class AccountResponse(AccountBase):
     created_at: datetime
     updated_at: datetime
     roles: list[AccountRoleResponse]
+
+
+class AccountNetSettlementResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    account_id: int
+    account_code: str
+    account_name: str
+    net_amount: Decimal
+    net_direction: str | None
+    settlement_status: str
+    summary_text: str
+    total_receivable: Decimal
+    total_payable: Decimal
+    roles: list[dict]
+
+
+class AccountContraOffsetRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    receivable_role: AccountRoleCode
+    payable_role: AccountRoleCode
+    amount: Decimal = Field(gt=0, decimal_places=2)
+    remark: str | None = None
+

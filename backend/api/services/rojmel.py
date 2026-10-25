@@ -1,3 +1,4 @@
+from api.services.account_provisioning import resolve_ledger_reference
 from datetime import date
 from decimal import Decimal
 from typing import Optional
@@ -68,6 +69,12 @@ def create_rojmel(db: Session, rojmel_in: RojmelCreate) -> Rojmel:
         rojmel_payload["net_amount"] = _calculate_net_amount(
             rojmel_in.amount, rojmel_in.sgst_percent, rojmel_in.cgst_percent, rojmel_in.igst_percent,
         )
+        if rojmel_in.customer_id:
+            rojmel_payload["account_ledger_id"], rojmel_payload["account_role"] = resolve_ledger_reference(db, "customer", rojmel_in.customer_id)
+        elif rojmel_in.party_id:
+            rojmel_payload["account_ledger_id"], rojmel_payload["account_role"] = resolve_ledger_reference(db, "party", rojmel_in.party_id)
+        else:
+            rojmel_payload["account_ledger_id"] = rojmel_payload["account_role"] = None
         new_rojmel = rojmel_repo.create_rojmel(db, data=rojmel_payload)
         replace_customer_effect(db, new_id=new_rojmel.customer_id, new_effect=_customer_effect(new_rojmel))
         if supplier is not None:
@@ -128,12 +135,19 @@ def update_rojmel(db: Session, rojmel_id: int, rojmel_in: RojmelUpdate) -> Rojme
 
         # Keep accepting the existing payload shape, but never persist client net totals.
         update_payload = rojmel_in.model_dump(exclude_unset=True, exclude={"receipt_no", "net_amount"})
+
+        # Resolve unified ledger references before modifying rojmel to avoid intermediate constraint check failures
+        target_cust = update_payload.get("customer_id", rojmel.customer_id)
+        target_party = update_payload.get("party_id", rojmel.party_id)
+        if target_cust:
+            rojmel.account_ledger_id, rojmel.account_role = resolve_ledger_reference(db, "customer", target_cust)
+        elif target_party:
+            rojmel.account_ledger_id, rojmel.account_role = resolve_ledger_reference(db, "party", target_party)
+        else:
+            rojmel.account_ledger_id = rojmel.account_role = None
+
         for key, value in update_payload.items():
             setattr(rojmel, key, value)
-
-        # Phase 3A references are snapshots, not runtime posting authority.
-        if (rojmel.customer_id, rojmel.party_id) != old_identity:
-            rojmel.account_ledger_id = rojmel.account_role = None
 
         rojmel_validation.validate_customer_account(db, rojmel.party_id, rojmel.customer_id, rojmel.transaction_type,
             require_active=rojmel.customer_id != old_customer_id)

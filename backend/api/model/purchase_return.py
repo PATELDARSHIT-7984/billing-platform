@@ -41,8 +41,7 @@ class PurchaseReturn(Base):
 
     party_id = Column(
         Integer,
-        ForeignKey("parties.id"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
 
@@ -91,7 +90,13 @@ class PurchaseReturn(Base):
     )
     created_by = Column(Integer, nullable=True)
 
-    party = relationship("Party")
+    account_ledger = relationship("AccountLedger", foreign_keys=[account_ledger_id])
+
+    @property
+    def party(self):
+        if self.account_ledger and self.account_ledger.account_role:
+            return self.account_ledger.account_role.account
+        return None
 
     items = relationship(
         "PurchaseReturnItem",

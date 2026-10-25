@@ -12,6 +12,7 @@ from api.schema.quotation import (
     QuotationUpdate,
 )
 from api.services.quotation import (
+    get_next_quotation_numbers,
     create_quotation,
     delete_quotation_by_id,
     get_all_quotations,
@@ -48,6 +49,11 @@ def list_quotations(
         skip=skip,
         limit=limit,
     )
+
+
+@router.get("/next-numbers")
+def next_quotation_numbers(db: Session = Depends(get_db)):
+    return get_next_quotation_numbers(db)
 
 
 @router.get(

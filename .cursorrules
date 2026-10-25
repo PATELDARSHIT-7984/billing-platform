@@ -1,0 +1,9 @@
+# Refer to PROJECT_RULES.md for full mandatory project rules.
+# Key Rules:
+# 1. Never read, print, or leak .env, secrets, or credentials.
+# 2. Never perform direct database operations on hosted/production databases.
+# 3. Never modify core financial, tax, or business logic without explicit user consent.
+# 4. Never commit, push, or deploy without explicit authorization.
+# 5. Write efficient, low-complexity, concise, impactful, and reusable code without bloat.
+# 6. Preserve database check constraints (e.g. ₹0 balance requires balance_type=None in account_ledgers).
+
