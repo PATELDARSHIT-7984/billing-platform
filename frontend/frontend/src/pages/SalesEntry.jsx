@@ -1,3 +1,8 @@
+import { useManagedOrigin } from '../hooks/useManagedCreate';
+import ManagedCreateButton from '../components/common/ManagedCreateButton';
+import AccountSelector from '../components/common/AccountSelector';
+import { fetchAccountRecord } from '../services/accountService';
+import { handleEnterNavigation } from '../utils/enterNavigation';
 import DoneBySelect from '../components/common/DoneBySelect';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -11,12 +16,12 @@ import {
   FormTextarea,
 } from '../components/common/FormField';
 import { useToast } from '../context/ToastContext';
-import { fetchCustomers, fetchCustomerById } from '../services/customerService';
 import { fetchItems } from '../services/itemService';
 import {
   createBill,
   fetchBillById,
   updateBill,
+  fetchNextBillNumbers,
 } from '../services/billService';
 import { extractErrorMessage } from '../services/api';
 import { UNIT_OPTIONS } from '../config/units';
@@ -104,7 +109,6 @@ export default function SalesEntry() {
   const editId = searchParams.get('edit');
   const loadedEditId = useRef(null);
 
-  const [customers, setCustomers] = useState([]);
   const [itemRecords, setItemRecords] = useState([]);
   const [details, setDetails] = useState(createEmptyDetails);
   const [itemForm, setItemForm] = useState(createEmptyItem);
@@ -115,26 +119,53 @@ export default function SalesEntry() {
   const [saving, setSaving] = useState(false);
   const [loadingSale, setLoadingSale] = useState(false);
 
-  const loadCustomers = () => fetchCustomers({ search: '' })
-    .then((data) => setCustomers(data.filter((customer) => customer.is_active !== false)))
-    .catch((error) => toast.error(extractErrorMessage(error)));
+  const managed = useManagedOrigin(
+    () => ({ details, items, itemForm, editingIndex, detailErrors, itemErrors }),
+    (draft) => {
+      setDetails(draft.details); setItems(draft.items); setItemForm(draft.itemForm);
+      setEditingIndex(draft.editingIndex); setDetailErrors(draft.detailErrors); setItemErrors(draft.itemErrors);
+      loadedEditId.current = editId;
+    },
+    (entity, record) => {
+      if (entity === 'item') {
+        setItemRecords((rows) => [...rows.filter((row) => row.id !== record.id), record]);
+        selectItem({ value: record.id, label: record.name, record });
+      } else if (entity === 'doneBy') {
+        setDetails((previous) => ({ ...previous, done_by: record.name, _doneBy: record }));
+      } else if (entity === 'account' && record.source === 'customer') {
+        // A create-and-return detour preserves entered contacts, lines and financial values.
+        setDetails((previous) => ({ ...previous, customer_id: record.id, _account: record, _accountType: record.accountType }));
+      }
+    },
+  );
 
   const loadItems = () => fetchItems({ search: '' })
     .then((data) => setItemRecords(data.filter((item) => item.is_active !== false)))
     .catch((error) => toast.error(extractErrorMessage(error)));
 
   useEffect(() => {
-    loadCustomers();
     loadItems();
-  }, []);
+    if (!editId && !managed.restoring) {
+      fetchNextBillNumbers()
+        .then((data) => {
+          if (data?.invoice_no) {
+            setDetails((previous) => ({
+              ...previous,
+              invoice_no: data.invoice_no,
+              order_no: data.order_no || previous.order_no,
+            }));
+          }
+        })
+        .catch(() => {});
+    }
+  }, [editId]);
 
 
 
 
   useEffect(() => {
     if (
-      !editId
-      || !customers.length
+      !editId || managed.restoring
       || !itemRecords.length
       || loadedEditId.current === editId
     ) {
@@ -150,12 +181,11 @@ export default function SalesEntry() {
         const sale = detail.bill;
         const saleItems = detail.items || [];
 
-        const customer = customers.find(
-          (row) => Number(getCustomerId(row)) === Number(sale.customer_id),
-        );
+        const customer = await fetchAccountRecord('customer', sale.customer_id, sale);
 
         setDetails({
           _savedInvoice: { ...sale, lineIds: saleItems.map((row) => row.bill_item_id) },
+          _account: customer,
           customer_id: sale.customer_id ?? null,
           invoice_no: sale.invoice_no || '',
           order_no: sale.order_no || '',
@@ -211,17 +241,7 @@ export default function SalesEntry() {
     }
 
     loadSale();
-  }, [editId, customers, itemRecords, navigate, toast]);
-
-  const customerOptions = useMemo(
-    () => customers.map((customer) => ({
-      value: getCustomerId(customer),
-      label: customer.customer_name || customer.name || 'Unnamed Customer',
-      meta: customer.city || customer.mobile || '',
-      record: customer,
-    })),
-    [customers],
-  );
+  }, [editId, itemRecords, navigate, toast]);
 
   const itemOptions = useMemo(
     () => itemRecords.map((item) => ({
@@ -259,6 +279,7 @@ export default function SalesEntry() {
   const applySelectedCustomer = (customer) => {
     setDetails((previous) => ({
       ...previous,
+      _account: customer,
       customer_id: getCustomerId(customer),
       address: customer?.address || '',
       city: customer?.city || '',
@@ -292,15 +313,11 @@ export default function SalesEntry() {
       return;
     }
 
-    fetchCustomerById(nextId)
-      .then((customer) => {
-        applySelectedCustomer(customer);
-        toast.success('Customer changed. Items and delivery details were cleared.');
-      })
-      .catch((error) => toast.error(extractErrorMessage(error)));
+    applySelectedCustomer(option.record);
+    toast.success('Customer changed. Items and delivery details were cleared.');
   };
 
-  const selectItem = (option) => {
+  function selectItem(option) {
     if (!option) {
       setItemForm(createEmptyItem());
       return;
@@ -387,6 +404,19 @@ export default function SalesEntry() {
     setEditingIndex(null);
     setDetailErrors({});
     setItemErrors({});
+    if (!editId) {
+      fetchNextBillNumbers()
+        .then((data) => {
+          if (data?.invoice_no) {
+            setDetails((previous) => ({
+              ...previous,
+              invoice_no: data.invoice_no,
+              order_no: data.order_no || previous.order_no,
+            }));
+          }
+        })
+        .catch(() => {});
+    }
   };
 
   const saveSale = () => {
@@ -464,7 +494,7 @@ export default function SalesEntry() {
   };
 
   return (
-    <div className="page general-transaction purchase-entry-final">
+    <div className="page general-transaction purchase-entry-final" data-enter-navigation onKeyDown={handleEnterNavigation}>
       <header className="gt-page-header">
         <div>
           <h1>{editId ? 'Update Sale' : 'Sales Entry'}</h1>
@@ -479,28 +509,14 @@ export default function SalesEntry() {
 
       <Card title="Transaction Details" className="gt-card">
         <div className="gt-details-grid">
-          <div className="gt-with-action">
-            <SearchableSelect
-              label="Customer"
-              options={customerOptions}
+          <AccountSelector domain="customer" record={details._account}
+              defaultType={details._accountType}
+              onCreate={(accountType) => managed.begin('account', { accountType, source: 'customer' })}
               value={details.customer_id}
-              onChange={selectCustomer}
-              placeholder="Search customer..."
+              onChange={(option, type) => { setDetails((previous) => ({ ...previous, _accountType: option?.accountType || type })); selectCustomer(option); }}
               required
               error={detailErrors.customer_id}
             />
-            <button
-              type="button"
-              className="gt-plus"
-              onClick={() => {
-                navigate('/customers?openAdd=1&returnTo=/sales-entry');
-              }}
-              title="Add new customer"
-              aria-label="Add new customer"
-            >
-              +
-            </button>
-          </div>
 
           <FormInput label="Bill No." value={details.invoice_no} placeholder="Generated automatically" disabled />
           <FormInput label="Order No." value={details.order_no} placeholder="Generated automatically" disabled />
@@ -533,6 +549,7 @@ export default function SalesEntry() {
           <FormInput label="Contact No." value={details.contact_no} onChange={() => {}} disabled />
           <FormInput label="Email" value={details.email} onChange={() => {}} disabled />
           <DoneBySelect
+            onCreate={() => managed.begin('doneBy')} createdPerson={details._doneBy}
             label="Done By"
             value={details.done_by}
             onChange={(value) => changeDetail('done_by', value)}
@@ -563,6 +580,7 @@ export default function SalesEntry() {
       <Card title="Item Entry" className="gt-card">
         <div className="gt-item-top">
           <SearchableSelect
+            action={<ManagedCreateButton entity="item" onClick={() => managed.begin('item')} />}
             label="Item Name"
             options={itemOptions}
             value={itemForm.item_id}

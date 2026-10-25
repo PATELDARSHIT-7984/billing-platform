@@ -1,11 +1,11 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { createContext } from './utils/draftStorage';
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { ToastProvider } from './context/ToastContext';
 import { CompanyProvider } from './context/CompanyContext';
 import MainLayout from './components/layout/MainLayout';
 
 import Dashboard from './pages/Dashboard';
 import PartyManagement from './pages/PartyManagement';
-import CustomerManagement from './pages/CustomerManagement';
 import ItemMaster from './pages/ItemMaster';
 import PurchaseEntry from './pages/Purchase/PurchaseEntry';
 import PurchaseHistory from './pages/PurchaseHistory';
@@ -28,11 +28,31 @@ export default function App() {
     <ToastProvider>
       <CompanyProvider>
         <BrowserRouter>
-          <Routes>
+          <ManagedRoutes />
+        </BrowserRouter>
+      </CompanyProvider>
+    </ToastProvider>
+  );
+}
+
+// Keep the origin mounted during a managed-create detour: no master-list refetch on return.
+function ManagedRoutes() {
+  const location = useLocation();
+  const flow = createContext(location);
+  const origin = flow ? { pathname: flow.origin.split('?')[0], search: flow.origin.includes('?') ? '?' + flow.origin.split('?')[1] : '',
+    state: { draftToken: flow.key, managedAway: true } } : location;
+  return <>
+    <div hidden={Boolean(flow)}><AppRoutes location={origin} /></div>
+    {flow && <AppRoutes location={location} />}
+  </>;
+}
+function AppRoutes({ location }) {
+  return (
+          <Routes location={location}>
             <Route element={<MainLayout />}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/parties" element={<PartyManagement />} />
-              <Route path="/customers" element={<CustomerManagement />} />
+              <Route path="/customers" element={<PartyManagement legacyCustomer />} />
               <Route path="/items" element={<ItemMaster />} />
               <Route path="/purchase-entry" element={<PurchaseEntry />} />
               <Route path="/purchase-history" element={<PurchaseHistory />} />
@@ -53,8 +73,5 @@ export default function App() {
               <Route path="/done-by" element={<DoneByManagement />} />
             </Route>
           </Routes>
-        </BrowserRouter>
-      </CompanyProvider>
-    </ToastProvider>
   );
 }

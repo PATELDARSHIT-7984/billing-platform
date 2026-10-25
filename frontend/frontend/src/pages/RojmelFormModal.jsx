@@ -1,3 +1,7 @@
+import ManagedCreateButton from '../components/common/ManagedCreateButton';
+import { handleEnterNavigation } from '../utils/enterNavigation';
+import AccountSelector from '../components/common/AccountSelector';
+import { accountSelectionFields } from '../services/accountService';
 import { useEffect, useState } from 'react';
 import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
@@ -21,6 +25,7 @@ const EMPTY_FORM = {
   given_taken_date: todayISO(),
   effective_date: todayISO(),
   party_id: '',
+  customer_id: '',
   cash_bank_id: '',
   done_by_id: '',
   pay_mode: 'Cash',
@@ -63,7 +68,6 @@ export default function RojmelFormModal({
   mode = 'add',
   initialData = null,
   restoredForm = null,
-  parties = [],
   banks = [],
   doneByList = [],
   onClose,
@@ -90,6 +94,7 @@ export default function RojmelFormModal({
         given_taken_date: initialData.given_taken_date || todayISO(),
         effective_date: initialData.effective_date || todayISO(),
         party_id: initialData.party_id ?? '',
+        customer_id: initialData.customer_id ?? '',
         cash_bank_id: initialData.cash_bank_id ?? '',
         done_by_id: initialData.done_by_id ?? '',
         pay_mode: initialData.pay_mode || 'Cash',
@@ -112,6 +117,9 @@ export default function RojmelFormModal({
   const setField = (field) => (value) => {
     setForm((prev) => {
       const next = { ...prev, [field]: value };
+      if (field === 'transaction_type' && !['Cr Pay', 'Dr Pay'].includes(value) && prev.customer_id) {
+        next.customer_id = ''; next.party_id = ''; next.accountType = 'SUPPLIER';
+      }
       if ((field === 'sgst_percent' || field === 'cgst_percent') && Number(value) > 0) {
         next.igst_percent = '0';
       }
@@ -140,7 +148,8 @@ export default function RojmelFormModal({
       receipt_no: initialData?.receipt_no || 'AUTO',
       given_taken_date: form.given_taken_date,
       effective_date: form.effective_date,
-      party_id: form.party_id === '' ? null : Number(form.party_id),
+      party_id: form.party_id ? Number(form.party_id) : null,
+      customer_id: form.customer_id ? Number(form.customer_id) : null,
       cash_bank_id: Number(form.cash_bank_id),
       done_by_id: Number(form.done_by_id),
       pay_mode: form.pay_mode,
@@ -160,7 +169,6 @@ export default function RojmelFormModal({
   const igstDisabled = Number(form.sgst_percent) > 0 || Number(form.cgst_percent) > 0;
   const sgstCgstDisabled = Number(form.igst_percent) > 0;
 
-  const partyOptions = [{ value: '', label: 'None' }, ...parties.map((p) => ({ value: String(p.id), label: p.name }))];
   const bankOptions = [{ value: '', label: 'Select Cash/Bank' }, ...banks.map((b) => ({ value: String(b.id), label: b.name }))];
   const doneByOptions = [{ value: '', label: 'Select Person' }, ...doneByList.map((d) => ({ value: String(d.id), label: d.name }))];
 
@@ -179,7 +187,7 @@ export default function RojmelFormModal({
         </>
       }
     >
-      <form className="rojmel-form" onSubmit={handleSubmit} noValidate>
+      <form data-enter-navigation onKeyDown={handleEnterNavigation} className="rojmel-form" onSubmit={handleSubmit} noValidate>
         <div className="rojmel-radio-field">
           <span className="rojmel-radio-label">Transaction Type <span>*</span></span>
           <div className="rojmel-radio-group">
@@ -204,18 +212,15 @@ export default function RojmelFormModal({
         </FormRow>
 
         <FormRow>
-          <div className="gt-with-action">
-            <FormSelect label="Party (optional)" name="party_id" value={String(form.party_id)} onChange={setField('party_id')} options={partyOptions} />
-            <button type="button" className="gt-plus" onClick={() => onAddParty(form)} title="Add new party" aria-label="Add new party">+</button>
-          </div>
-          <div className="gt-with-action">
-            <FormSelect label="Cash / Bank" name="cash_bank_id" value={String(form.cash_bank_id)} onChange={setField('cash_bank_id')} options={bankOptions} required error={errors.cash_bank_id} />
-            <button type="button" className="gt-plus" onClick={() => onAddBank(form)} title="Add new bank" aria-label="Add new bank">+</button>
-          </div>
-          <div className="gt-with-action">
-            <FormSelect label="Done By" name="done_by_id" value={String(form.done_by_id)} onChange={setField('done_by_id')} options={doneByOptions} required error={errors.done_by_id} />
-            <button type="button" className="gt-plus" onClick={() => onAddDoneBy(form)} title="Add new person" aria-label="Add new person">+</button>
-          </div>
+          <AccountSelector name="rojmel_account" domain={['Cr Pay', 'Dr Pay'].includes(form.transaction_type) ? undefined : 'party'}
+              source={form.customer_id ? 'customer' : 'party'} value={form.customer_id || form.party_id}
+              defaultType={form.accountType} record={form._account} disabled={submitting}
+              onCreate={(accountType) => onAddParty({ ...form, accountType })}
+              onChange={(selection, nextType) => setForm((previous) => ({ ...previous,
+                ...accountSelectionFields(selection), _account: selection?.record, accountType: selection?.accountType || nextType,
+              }))} />
+          <FormSelect action={<ManagedCreateButton entity="bank" onClick={() => onAddBank(form)} disabled={submitting} />} label="Cash / Bank" name="cash_bank_id" value={String(form.cash_bank_id)} onChange={setField('cash_bank_id')} options={bankOptions} required error={errors.cash_bank_id} />
+          <FormSelect action={<ManagedCreateButton entity="doneBy" onClick={() => onAddDoneBy(form)} disabled={submitting} />} label="Done By" name="done_by_id" value={String(form.done_by_id)} onChange={setField('done_by_id')} options={doneByOptions} required error={errors.done_by_id} />
         </FormRow>
 
         <FormRow>

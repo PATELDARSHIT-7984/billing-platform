@@ -89,9 +89,6 @@ export default function PurchaseReturnHistory() {
   }
 
   const columns = [
-    { key: 'pdf', label: 'Download PDF', render: (row) => (
-      <PdfDownloadActions type="purchaseReturn" loadDetail={() => fetchPurchaseReturnById(row.id)} />
-    ) },
     {
       key: 'return_no',
       label: 'Return No.',
@@ -149,6 +146,13 @@ export default function PurchaseReturnHistory() {
         <strong>{formatCurrency(row.grand_total || 0)}</strong>
       ),
     },
+    {
+      key: 'pdf',
+      label: 'Download PDF',
+      render: (row) => (
+        <PdfDownloadActions type="purchaseReturn" loadDetail={() => fetchPurchaseReturnById(row.id)} />
+      ),
+    },
   ];
 
   return (
@@ -180,10 +184,7 @@ export default function PurchaseReturnHistory() {
         open={detailOpen}
         loading={detailLoading}
         purchaseReturn={detailData}
-        onClose={() => {
-          setDetailOpen(false);
-          setDetailData(null);
-        }}
+        onClose={() => setDetailOpen(false)}
       />
     </div>
   );

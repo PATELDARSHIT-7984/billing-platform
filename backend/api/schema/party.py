@@ -3,11 +3,14 @@ from decimal import Decimal
 from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
+from api.utils.gstin import normalize_gstin
+from api.schema.party_type import PartyType
+from api.utils.account_balance import BalanceType
 
 
 class PartyCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=200)
-    party_type: str = Field(default="Supplier", pattern="^(Supplier|Customer)$")
+    party_type: PartyType = PartyType.SUPPLIER
 
     country_code: Optional[str] = "+91"
     mobile: Optional[str] = None
@@ -22,10 +25,7 @@ class PartyCreate(BaseModel):
         default=Decimal("0.00"),
         ge=0,
     )
-    balance_type: str = Field(
-        default="Credit",
-        pattern="^(Credit|Debit)$",
-    )
+    balance_type: BalanceType = "Credit"
     opening_remark: Optional[str] = None
 
     @field_validator("name")
@@ -39,11 +39,7 @@ class PartyCreate(BaseModel):
     @field_validator("gstin")
     @classmethod
     def validate_gstin(cls, value):
-        if value:
-            value = value.strip().upper()
-            if len(value) != 15:
-                raise ValueError("GSTIN must be exactly 15 characters")
-        return value or None
+        return normalize_gstin(value)
 
     @field_validator("pan_card")
     @classmethod
@@ -61,10 +57,7 @@ class PartyUpdate(BaseModel):
         min_length=2,
         max_length=200,
     )
-    party_type: Optional[str] = Field(
-        default=None,
-        pattern="^(Supplier|Customer)$",
-    )
+    party_type: Optional[PartyType] = None
 
     country_code: Optional[str] = None
     mobile: Optional[str] = None
@@ -79,10 +72,7 @@ class PartyUpdate(BaseModel):
         default=None,
         ge=0,
     )
-    balance_type: Optional[str] = Field(
-        default=None,
-        pattern="^(Credit|Debit)$",
-    )
+    balance_type: Optional[BalanceType] = None
     opening_remark: Optional[str] = None
 
     @field_validator("name")
@@ -99,11 +89,7 @@ class PartyUpdate(BaseModel):
     @field_validator("gstin")
     @classmethod
     def validate_gstin(cls, value):
-        if value:
-            value = value.strip().upper()
-            if len(value) != 15:
-                raise ValueError("GSTIN must be exactly 15 characters")
-        return value or None
+        return normalize_gstin(value)
 
     @field_validator("pan_card")
     @classmethod

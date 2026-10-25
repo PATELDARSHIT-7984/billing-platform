@@ -24,10 +24,9 @@ export default function DashboardTrend({ data }) {
       {[
         ['Sales', chartAmount(data.sales), 'blue'],
         ['Purchase', chartAmount(data.purchase), 'teal'],
-        ['Sales − Purchase', chartAmount(data.sales, data.purchase), 'neutral'],
       ].map(([label, amount, tone]) => <div key={label}><span><i className={`dashboard__dot dashboard__dot--${tone}`} />{label}</span><strong title={formatINR(amount)}>{formatINR(amount, true)}</strong></div>)}
     </div>
-    <p className="dashboard__note">{formatDate(data.start_date)} – {formatDate(data.end_date)} · Gross transaction volume</p>
+    <p className="dashboard__note">{formatDate(data.start_date)} – {formatDate(data.end_date)} · Recorded amounts, before returns</p>
     {!hasData ? <div className="dashboard__empty"><strong>No chart data available</strong><span>No sales or purchases in this date range.</span></div> : <div className="dashboard__chart">
       <div className="dashboard__chart-tooltip" aria-live="polite">
         {selected == null ? <span>Hover or focus a month to compare exact amounts</span> : <><strong>{data.labels[selected]}</strong><span>Sales {formatINR(data.sales[selected])}</span><span>Purchase {formatINR(data.purchase[selected])}</span></>}

@@ -1,3 +1,8 @@
+import { useManagedOrigin } from '../../hooks/useManagedCreate';
+import ManagedCreateButton from '../../components/common/ManagedCreateButton';
+import AccountSelector from '../../components/common/AccountSelector';
+import { fetchAccountRecord } from '../../services/accountService';
+import { handleEnterNavigation } from '../../utils/enterNavigation';
 import DoneBySelect from '../../components/common/DoneBySelect';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -12,10 +17,7 @@ import {
   FormTextarea,
 } from '../../components/common/FormField';
 
-import PartyFormModal from '../PartyFormModal';
-
 import { useToast } from '../../context/ToastContext';
-import { fetchParties, createParty } from '../../services/partyService';
 import { fetchItems } from '../../services/itemService';
 import {
   createPurchase,
@@ -145,6 +147,7 @@ function addDays(dateString, daysValue) {
 
 function mapPurchaseToDetails(purchase, selectedParty) {
   return {
+    _account: selectedParty,
     party_id: purchase.party_id,
     bill_no: purchase.bill_no || '',
     order_no: purchase.order_no || '',
@@ -312,7 +315,6 @@ export default function PurchaseEntry() {
   const editId = searchParams.get('edit');
   const loadedEditId = useRef(null);
 
-  const [parties, setParties] = useState([]);
   const [itemRecords, setItemRecords] = useState([]);
 
   const [details, setDetails] = useState(emptyDetails);
@@ -323,9 +325,6 @@ export default function PurchaseEntry() {
   const [itemErrors, setItemErrors] = useState({});
   const [editingIndex, setEditingIndex] = useState(null);
 
-  const [partyModalOpen, setPartyModalOpen] = useState(false);
-
-  const [submittingParty, setSubmittingParty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadingPurchase, setLoadingPurchase] = useState(false);
 
@@ -337,16 +336,6 @@ export default function PurchaseEntry() {
   const liveAmount = useMemo(
     () => computeLineAmounts(itemForm).amount,
     [itemForm],
-  );
-
-  const partyOptions = useMemo(
-    () => parties.map((party) => ({
-      value: party.id,
-      label: party.name,
-      meta: party.city || party.mobile || '',
-      record: party,
-    })),
-    [parties],
   );
 
   const itemOptions = useMemo(
@@ -362,19 +351,30 @@ export default function PurchaseEntry() {
   );
 
 
+  const managed = useManagedOrigin(
+    () => ({ details, items, itemForm, editingIndex, detailErrors, itemErrors }),
+    (draft) => {
+      setDetails(draft.details); setItems(draft.items); setItemForm(draft.itemForm);
+      setEditingIndex(draft.editingIndex); setDetailErrors(draft.detailErrors); setItemErrors(draft.itemErrors);
+      loadedEditId.current = editId;
+    },
+    (entity, record) => {
+      if (entity === 'item') {
+        setItemRecords((rows) => [...rows.filter((row) => row.id !== record.id), record]);
+        selectItem({ value: record.id, label: record.name, record });
+      } else if (entity === 'doneBy') {
+        setDetails((previous) => ({ ...previous, done_by: record.name, _doneBy: record }));
+      } else if (entity === 'account' && record.source === 'party') {
+        // A create-and-return detour preserves entered contacts, lines and financial values.
+        setDetails((previous) => ({ ...previous, party_id: record.id, _account: record, _accountType: record.accountType }));
+      }
+    },
+  );
+
   useEffect(() => {
     async function loadReferenceData() {
       try {
-        const [partyData, itemData] = await Promise.all([
-          fetchParties({ search: '' }),
-          fetchItems({ search: '' }),
-        ]);
-
-        setParties(
-          partyData.filter(
-            (party) => party.party_type === 'Supplier',
-          ),
-        );
+        const itemData = await fetchItems({ search: '' });
 
         setItemRecords(
           itemData.filter(
@@ -391,8 +391,7 @@ export default function PurchaseEntry() {
 
   useEffect(() => {
     if (
-      !editId
-      || !parties.length
+      !editId || managed.restoring
       || loadedEditId.current === editId
     ) {
       return;
@@ -404,9 +403,7 @@ export default function PurchaseEntry() {
       try {
         const purchase = await fetchPurchaseById(editId);
 
-        const selectedParty = parties.find(
-          (party) => party.id === purchase.party_id,
-        );
+        const selectedParty = await fetchAccountRecord('party', purchase.party_id, purchase);
 
         setDetails(
           mapPurchaseToDetails(
@@ -431,7 +428,7 @@ export default function PurchaseEntry() {
     }
 
     loadPurchase();
-  }, [editId, parties, navigate, toast]);
+  }, [editId, navigate, toast]);
 
   function clearItemForm() {
     setItemForm(emptyItem());
@@ -499,6 +496,7 @@ export default function PurchaseEntry() {
     setDetails((previous) => ({
       ...previous,
 
+      _account: party,
       party_id: party?.id || null,
       address: party?.address || '',
       city: party?.city || '',
@@ -547,33 +545,6 @@ export default function PurchaseEntry() {
       toast.success(
         'Supplier changed. Items and delivery details were cleared.',
       );
-    }
-  }
-
-  async function saveParty(payload) {
-    setSubmittingParty(true);
-
-    try {
-      const created = await createParty({
-        ...payload,
-        party_type: 'Supplier',
-      });
-
-      setParties((previous) => [
-        ...previous,
-        created,
-      ]);
-
-      applySelectedParty(created);
-      setPartyModalOpen(false);
-
-      toast.success(
-        'Supplier added and selected. Items and delivery details were cleared.',
-      );
-    } catch (error) {
-      toast.error(extractErrorMessage(error));
-    } finally {
-      setSubmittingParty(false);
     }
   }
 
@@ -754,7 +725,7 @@ export default function PurchaseEntry() {
   }
 
   return (
-    <div className="page general-transaction purchase-entry-final">
+    <div className="page general-transaction purchase-entry-final" data-enter-navigation onKeyDown={handleEnterNavigation}>
       <header className="gt-page-header">
         <div>
           <h1>
@@ -788,29 +759,15 @@ export default function PurchaseEntry() {
         className="gt-card"
       >
         <div className="gt-details-grid">
-          <div className="gt-with-action">
-            <SearchableSelect
-              label="Supplier"
+          <AccountSelector domain="party" record={details._account}
+              defaultType={details._accountType}
+              onCreate={(accountType) => managed.begin('account', { accountType, source: 'party' })}
               name="party_id"
-              options={partyOptions}
               value={details.party_id}
-              onChange={selectParty}
-              placeholder="Search supplier..."
+              onChange={(option, type) => { setDetails((previous) => ({ ...previous, _accountType: option?.accountType || type })); selectParty(option); }}
               required
               error={detailErrors.party_id}
-              emptyMessage="No supplier found. Use + to add one."
             />
-
-            <button
-              type="button"
-              className="gt-plus"
-              onClick={() => setPartyModalOpen(true)}
-              title="Add new supplier"
-              aria-label="Add new supplier"
-            >
-              +
-            </button>
-          </div>
 
           <FormInput
             label="Bill No."
@@ -887,6 +844,7 @@ export default function PurchaseEntry() {
           />
 
           <DoneBySelect
+            onCreate={() => managed.begin('doneBy')} createdPerson={details._doneBy}
             label="Done By"
             value={details.done_by}
             onChange={(value) => changeDetail('done_by', value)}
@@ -924,6 +882,7 @@ export default function PurchaseEntry() {
       >
         <div className="gt-item-top">
           <SearchableSelect
+            action={<ManagedCreateButton entity="item" onClick={() => managed.begin('item')} />}
             label="Item Name"
             name="item_name"
             options={itemOptions}
@@ -1326,14 +1285,6 @@ export default function PurchaseEntry() {
             )}
         </Button>
       </div>
-
-      <PartyFormModal
-        open={partyModalOpen}
-        mode="add"
-        submitting={submittingParty}
-        onClose={() => setPartyModalOpen(false)}
-        onSubmit={saveParty}
-      />
     </div>
   );
 }

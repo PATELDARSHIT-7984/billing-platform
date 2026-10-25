@@ -1,0 +1,8 @@
+.account-selector {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.9fr) minmax(0, 1.5fr);
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+}
+.account-selector > .form-field { min-width: 0; }

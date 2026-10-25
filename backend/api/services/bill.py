@@ -1,3 +1,5 @@
+from api.services.account_provisioning import resolve_ledger_reference
+from api.services.customer import replace_customer_effect
 from api.validation.done_by import validate_done_by_snapshot
 from collections import defaultdict
 from decimal import Decimal, ROUND_HALF_UP
@@ -198,36 +200,32 @@ def _generate_invoice_no(
     db: Session,
 ) -> str:
     """
-    Generates next numeric Sales invoice number.
+    Generates next sequential Sales invoice number in BILL-001 format.
     """
-
     existing_invoices = (
         bill_repo.get_all_invoice_numbers(
             db
         )
     )
 
-    numeric_numbers = [
-        int(invoice)
-        for invoice in existing_invoices
-        if invoice.isdigit()
-    ]
+    bill_numbers = []
+    for invoice in existing_invoices:
+        if invoice.startswith("BILL-"):
+            suffix = invoice.replace("BILL-", "")
+            if suffix.isdigit():
+                bill_numbers.append(int(suffix))
 
-    next_number = (
-        max(
-            numeric_numbers,
-            default=0,
-        )
-        + 1
-    )
+    next_number = max(bill_numbers, default=0) + 1 if bill_numbers else 1
 
+    candidate = f"BILL-{next_number:03d}"
     while bill_repo.invoice_no_exists(
         db,
-        str(next_number),
+        candidate,
     ):
         next_number += 1
+        candidate = f"BILL-{next_number:03d}"
 
-    return str(next_number)
+    return candidate
 
 # =============================================================================
 # ITEM / GST CALCULATION
@@ -704,6 +702,10 @@ def create_bill(
         "is_active": True,
     }
 
+    ledger_id, role = resolve_ledger_reference(db, "customer", customer.id)
+    bill_payload["account_ledger_id"] = ledger_id
+    bill_payload["account_role"] = role
+
     try:
         bill = (
             bill_repo.create_bill(
@@ -812,6 +814,7 @@ def create_bill(
                 bill_data.bill_date
             )
 
+        replace_customer_effect(db, new_id=bill.customer_id, new_effect=-bill.grand_total)
         db.commit()
     except Exception:
         db.rollback()
@@ -905,6 +908,8 @@ def update_bill(
             bill_id,
         )
     )
+
+    old_customer_id, old_total = bill.customer_id, bill.grand_total
 
     if "done_by" in bill_data.model_fields_set:
         validate_done_by_snapshot(db, bill_data.done_by, previous=bill.done_by)
@@ -1275,6 +1280,12 @@ def update_bill(
             ),
         }
 
+        effective_customer_id = update_payload.get("customer_id", bill.customer_id)
+        if effective_customer_id:
+            ledger_id, role = resolve_ledger_reference(db, "customer", effective_customer_id)
+            update_payload["account_ledger_id"] = ledger_id
+            update_payload["account_role"] = role
+
         updated_bill = (
             bill_repo.update_bill(
                 db,
@@ -1283,6 +1294,7 @@ def update_bill(
             )
         )
 
+        replace_customer_effect(db, old_customer_id, -old_total, bill.customer_id, -bill.grand_total)
         db.commit()
     except Exception:
         db.rollback()
@@ -1374,6 +1386,7 @@ def delete_bill(
             bill,
         )
 
+        replace_customer_effect(db, old_id=bill.customer_id, old_effect=-bill.grand_total)
         db.commit()
 
     except Exception:
@@ -1385,4 +1398,15 @@ def delete_bill(
             f"Bill '{bill.invoice_no}' "
             f"deleted successfully"
         )
+    }
+
+
+def get_next_bill_numbers(db: Session) -> dict:
+    """Return next auto-generated sales invoice number and order number."""
+    inv = _generate_invoice_no(db)
+    suffix = inv.replace("BILL-", "")
+    order_no = f"ORD-{suffix}" if suffix.isdigit() else "ORD-001"
+    return {
+        "invoice_no": inv,
+        "order_no": order_no,
     }

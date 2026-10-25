@@ -1,3 +1,4 @@
+from api.services.account_provisioning import resolve_ledger_reference
 from api.validation.done_by import validate_done_by_snapshot
 from api.utils.rounding import round_half_up
 from collections import defaultdict
@@ -739,6 +740,10 @@ def create_purchase_return(
             "is_active": True,
         }
 
+        ledger_id, role = resolve_ledger_reference(db, "party", data.party_id)
+        record_payload["account_ledger_id"] = ledger_id
+        record_payload["account_role"] = role
+
         record = (
             purchase_return_repo
             .create_purchase_return(
@@ -1404,6 +1409,12 @@ def update_purchase_return_by_id(
         # SAVE
         # =========================================================================
 
+        effective_party_id = update_payload.get("party_id", record.party_id)
+        if effective_party_id:
+            ledger_id, role = resolve_ledger_reference(db, "party", effective_party_id)
+            update_payload["account_ledger_id"] = ledger_id
+            update_payload["account_role"] = role
+
         updated_record = (
             purchase_return_repo
             .update_purchase_return(
@@ -1420,8 +1431,8 @@ def update_purchase_return_by_id(
             if balance_delta:
                 apply_party_balance_delta(db, new_party_id, balance_delta)
         else:
-            apply_party_balance_delta(db, old_party_id, old_grand_total)
-            apply_party_balance_delta(db, new_party_id, -new_grand_total)
+            for party_id, delta in sorted(((old_party_id, old_grand_total), (new_party_id, -new_grand_total))):
+                apply_party_balance_delta(db, party_id, delta)
 
         db.commit()
     except Exception:

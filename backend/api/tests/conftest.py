@@ -40,6 +40,7 @@ from api.dependencies.dependencies import get_db
 
 from api.router.party import router as party_router
 from api.router.customer import router as customer_router
+from api.router.account import router as account_router
 
 # These imports register the models in Base.metadata.
 from api.model.party import Party  # noqa: F401, E402
@@ -137,6 +138,7 @@ def test_app(
 
     application.include_router(party_router)
     application.include_router(customer_router)
+    application.include_router(account_router)
 
     def override_get_db() -> Generator[Session, None, None]:
         session = test_session_factory()

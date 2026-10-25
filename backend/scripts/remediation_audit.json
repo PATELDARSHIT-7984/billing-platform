@@ -1,0 +1,29 @@
+{
+  "revision": "c4a9e7120d35",
+  "recorded_at": "2026-10-24T11:30:31.061803+00:00",
+  "operation": "set gstin and pan_card to NULL",
+  "status": "pre-mutation intent",
+  "parties": [
+    {
+      "id": 4,
+      "party_code": "PTY-0004",
+      "name": "Blue lake Ceramic",
+      "gstin": "SQWHDQDIOH3HWFW",
+      "pan_card": "WHDQDIOH3H"
+    },
+    {
+      "id": 5,
+      "party_code": "PTY-0005",
+      "name": "fcfcgf",
+      "gstin": "DHFBADSJBJHABSD",
+      "pan_card": "FBADSJBJHA"
+    },
+    {
+      "id": 10,
+      "party_code": "PTY-0008",
+      "name": "Darshit",
+      "gstin": "27AT1234F2Z5YUI",
+      "pan_card": "AT1234F2Z5"
+    }
+  ]
+}

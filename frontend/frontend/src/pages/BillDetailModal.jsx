@@ -1,7 +1,7 @@
 import PdfDownloadActions from '../components/common/PdfDownloadActions';
 import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
-import { formatCurrency } from '../utils/calculations';
+import { formatCurrency, formatPhoneNumber } from '../utils/calculations';
 import './PurchaseDetailModal.css';
 import '../styles/SalesEntry.css';
 
@@ -48,7 +48,7 @@ export default function BillDetailModal({ open, loading, billDetail, onClose }) 
             </div>
             <div>
               <span className="purchase-detail__meta-label">Mobile</span>
-              <span className="purchase-detail__meta-value">{bill.mobile || '—'}</span>
+              <span className="purchase-detail__meta-value">{formatPhoneNumber(bill.mobile)}</span>
             </div>
             {bill.buyer_gstin && (
               <div>

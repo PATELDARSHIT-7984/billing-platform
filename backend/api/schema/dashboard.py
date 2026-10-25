@@ -18,7 +18,8 @@ class Summary(BaseModel):
     total_received: Decimal
     total_paid: Decimal
     net_cash_flow: Decimal
-    customer_receivable: Decimal | None
+    customer_receivable: Decimal
+    customer_credit: Decimal
     sales_return_rate: Decimal
     purchase_return_rate: Decimal
 

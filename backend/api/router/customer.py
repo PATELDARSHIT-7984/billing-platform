@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
-from typing import List
+from api.schema.pagination import HistoryPage
 
 from api.dependencies.dependencies import get_db
 from api.schema.customer import CustomerCreate, CustomerUpdate, CustomerResponse
@@ -16,13 +16,19 @@ def create_customer(customer_in: CustomerCreate, db: Session = Depends(get_db)):
 def get_customer(customer_id: int, db: Session = Depends(get_db)):
     return customer_service.get_customer_by_id(db, customer_id)
 
-@router.get("/", response_model=List[CustomerResponse])
+@router.get("/", response_model=list[CustomerResponse] | HistoryPage[CustomerResponse])
 def get_all_customers(
     db: Session = Depends(get_db),
     search: str | None = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
+    page: int | None = Query(None, ge=1),
+    page_size: int = Query(20, ge=1, le=200),
 ):
+    if page is not None:
+        total = customer_service.get_all_customers(db, search=search, count_only=True)
+        items = customer_service.get_all_customers(db, search=search, skip=(page - 1) * page_size, limit=page_size)
+        return HistoryPage(items=items, total=total, page=page, page_size=page_size)
     return customer_service.get_all_customers(db, search=search, skip=skip, limit=limit)
 
 # PUT, not PATCH: update_customer() in the service overwrites every field,

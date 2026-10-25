@@ -133,6 +133,9 @@ def update_purchase_return(
     record: PurchaseReturn,
     data: dict,
 ) -> PurchaseReturn:
+    # Phase 3A: invalidate the snapshot only when the legacy identity changes.
+    if "party_id" in data and data["party_id"] != record.party_id:
+        record.account_ledger_id = record.account_role = None
     for field_name, field_value in data.items():
         setattr(record, field_name, field_value)
     db.flush()

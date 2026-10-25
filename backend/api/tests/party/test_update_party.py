@@ -82,7 +82,7 @@ def test_update_party_rejects_another_partys_gstin(
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "GSTIN already exists"
+    assert response.json()["detail"] == "GSTIN is already used by another account."
 
 
 def test_update_party_not_found(client: TestClient, party_api: PartyApi):

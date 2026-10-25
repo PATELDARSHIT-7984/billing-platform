@@ -1,6 +1,7 @@
 from sqlalchemy import (
     Column,
     Integer,
+    Numeric,
     String,
     Boolean,
     DateTime
@@ -31,6 +32,11 @@ class Customer(Base):
     gstin = Column(String(15), nullable=True, unique=True)
     pan_card = Column(String(10), nullable=True, unique=True)
     state_code = Column(String(2), nullable=True)
+
+    opening_balance = Column(Numeric(18, 2), default=0, server_default="0", nullable=False)
+    current_balance = Column(Numeric(18, 2), default=0, server_default="0", nullable=False)
+    balance_type = Column(String(10), default="Credit", server_default="Credit", nullable=False)
+    current_balance_type = Column(String(10), default="Credit", server_default="Credit", nullable=False)
 
     remarks = Column(String, nullable=True)
 

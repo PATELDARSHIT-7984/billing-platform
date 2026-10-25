@@ -1,11 +1,11 @@
-﻿import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import Button from '../components/common/Button';
 import Modal from '../components/common/Modal';
 import Pagination from '../components/common/Pagination';
 import SearchBar from '../components/common/SearchBar';
 import { SalesIcon, PurchaseIcon, PartyIcon, RojmelIcon, BillHistoryIcon, PurchaseHistoryIcon, ReportsIcon } from '../components/layout/icons';
 import { fetchDashboard } from '../services/dashboardService';
-import { extractErrorMessage } from '../services/api';
 import { formatINR, formatDate } from '../utils/dashboardFormat';
 import DashboardTrend from './DashboardTrend';
 import './Dashboard.css';
@@ -25,7 +25,7 @@ function useDashboard(section, params) {
     const controller = new AbortController();
     fetchDashboard(section, JSON.parse(key), controller.signal).then(
       (data) => { if (!controller.signal.aborted) setState({ key, data, error: '', loading: false }); },
-      (error) => { if (!controller.signal.aborted) setState({ key, data: null, error: extractErrorMessage(error), loading: false }); },
+      () => { if (!controller.signal.aborted) setState({ key, data: null, error: 'Please try again. Your records have not been changed.', loading: false }); },
     );
     return () => controller.abort();
   }, [section, key, retry]);
@@ -52,30 +52,38 @@ function Empty({ title, hint = 'Try a different date range.' }) {
   return <div className="dashboard__empty"><span className="dashboard__empty-icon" aria-hidden="true"><ReportsIcon /></span><strong>{title}</strong><span>{hint}</span></div>;
 }
 
-function SummaryCard({ label, value, icon: Icon, tone, children }) {
+function SummaryCard({ label, value, icon: Icon, tone, scope, to, linkLabel, children }) {
   return <article className={`dashboard__stat dashboard__stat--${tone}`}>
-    <div className="dashboard__stat-label"><span>{label}</span><span className="dashboard__stat-icon" aria-hidden="true"><Icon /></span></div>
-    <Money value={value} compact className="dashboard__stat-value" />
-    <div className="dashboard__stat-support">{children}</div>
+    <span className="dashboard__scope">{scope}</span>
+    <div className="dashboard__stat-label"><h2>{label}</h2><span className="dashboard__stat-icon" aria-hidden="true"><Icon /></span></div>
+    <Money value={value} className="dashboard__stat-value" />
+    <p className="dashboard__stat-support">{children}</p>
+    {to && <Link className="dashboard__detail-link" to={to}>{linkLabel} <span aria-hidden="true">→</span></Link>}
   </article>;
 }
 
 function Summary({ request }) {
   const data = request.data;
-  return <Status request={request} name="summary" shape="cards">{data && <>
+  return <Status request={request} name="business summary" shape="cards">{data && <>
     <div className="dashboard__stats">
-      <SummaryCard label="Net Sales" value={data.net_sales} icon={SalesIcon} tone="blue">Gross sales <Money value={data.total_sales} compact /></SummaryCard>
-      <SummaryCard label="Net Purchase" value={data.net_purchase} icon={PurchaseIcon} tone="teal">Gross purchase <Money value={data.total_purchase} compact /></SummaryCard>
-      <SummaryCard label="Supplier Payable" value={data.supplier_payable} icon={PartyIcon} tone="amber">Current outstanding</SummaryCard>
-      <SummaryCard label="Net Cash Flow" value={data.net_cash_flow} icon={RojmelIcon} tone="navy">{Number(data.net_cash_flow) > 0 ? 'Positive cash flow' : Number(data.net_cash_flow) < 0 ? 'Payments exceed receipts' : 'Receipts and payments are balanced'}</SummaryCard>
+      <SummaryCard label="Customers owe you" value={data.customer_receivable} icon={PartyIcon} tone="teal" scope="Current balance" to="/parties?accountType=CUSTOMER" linkLabel="View customer accounts">
+        {Number(data.customer_receivable) === 0 ? 'No customer payments are pending.' : 'Money still to receive from customers.'}
+      </SummaryCard>
+      <SummaryCard label="To pay suppliers" value={data.supplier_payable} icon={PurchaseIcon} tone="amber" scope="Current balance" to="/parties?accountType=SUPPLIER" linkLabel="View supplier accounts">
+        {Number(data.supplier_payable) === 0 ? 'No supplier payments are pending.' : 'Money you still owe supplier accounts.'}
+      </SummaryCard>
+      <SummaryCard label="Sales recorded" value={data.total_sales} icon={SalesIcon} tone="blue" scope="Selected period" to="/sales-history" linkLabel="All sales history">
+        {Number(data.total_sales) === 0 ? 'No sales recorded in this period.' : 'Recorded invoice value, before returns.'}
+      </SummaryCard>
+      <SummaryCard label="Purchases recorded" value={data.total_purchase} icon={PurchaseIcon} tone="blue" scope="Selected period" to="/purchase-history" linkLabel="All purchase history">
+        {Number(data.total_purchase) === 0 ? 'No purchases recorded in this period.' : 'Recorded purchase value, before returns.'}
+      </SummaryCard>
     </div>
-    <div className="dashboard__secondary">
-      {[
-        ['Total Sales', data.total_sales, SalesIcon], ['Total Purchase', data.total_purchase, PurchaseIcon],
-        ['Supplier Advance', data.supplier_advance, PartyIcon], ['Total Received', data.total_received, RojmelIcon], ['Total Paid', data.total_paid, BillHistoryIcon],
-      ].map(([label, value, Icon]) => <div key={label}><span className="dashboard__secondary-icon" aria-hidden="true"><Icon /></span><div><span>{label}</span><Money value={value} compact /></div></div>)}
+    <p className="dashboard__period-note"><span>Activity: {formatDate(data.start_date)} – {formatDate(data.end_date)}</span><span>Balances are current, including inactive accounts. Supplier totals exclude Purchase-type accounts.</span></p>
+    <div className="dashboard__credits">
+      <div><h2>Customer credit</h2><Money value={data.customer_credit} /><p>{Number(data.customer_credit) === 0 ? 'No customer credit recorded.' : 'Customer advance or money owed back. Review before collecting.'}</p></div>
+      <div><h2>Credit with suppliers</h2><Money value={data.supplier_advance} /><p>{Number(data.supplier_advance) === 0 ? 'No supplier credit recorded.' : 'Advance paid or money to recover from supplier accounts.'}</p></div>
     </div>
-    <p className="dashboard__period-note">{formatDate(data.start_date)} – {formatDate(data.end_date)}<span>Supplier balances are current outstanding values.</span></p>
   </>}</Status>;
 }
 
@@ -106,7 +114,7 @@ function ViewAll({ type: initialType, ranking, dates, search }) {
     <Heading title={ranking ? 'Business partner ranking' : 'Browse accounts'} subtitle={ranking ? `Ranked by net ${type === 'supplier' ? 'purchase' : 'sales'}` : 'Search across all accounts, including inactive records.'}>
       <select aria-label="View all account type" value={type} onChange={(e) => setType(e.target.value)}><option value="supplier">Supplier</option><option value="customer">Customer</option></select>
     </Heading>
-    {!ranking && type === 'customer' && <p className="dashboard__pending">Receivable tracking pending. Contact details are available below.</p>}
+    {!ranking && type === 'customer' && <p className="dashboard__pending">Search and browse all customer accounts with live balance indicators.</p>}
     <AccountList key={type} type={type} ranking={ranking} dates={dates} expanded initialSearch={search} />
   </ModalContent>;
 }
@@ -137,9 +145,17 @@ function AccountList({ type, ranking = false, dates, expanded = false, initialSe
       {expanded && !ranking && <>
         <select aria-label="Sort accounts" value={sort} onChange={(e) => { setSort(e.target.value); setPage(1); }}>
           <option value="name_asc">Name A–Z</option><option value="name_desc">Name Z–A</option>
-          {type === 'supplier' && <><option value="balance_desc">Highest Amount</option><option value="balance_asc">Lowest Amount</option></>}
+          <option value="balance_desc">Highest Amount</option><option value="balance_asc">Lowest Amount</option>
         </select>
-        {type === 'supplier' && <select aria-label="Balance filter" value={balance} onChange={(e) => { setBalance(e.target.value); setPage(1); }}><option value="all">All balances</option><option value="payable">Payable</option><option value="advance">Advance</option></select>}
+        {type === 'supplier' ? (
+          <select aria-label="Balance filter" value={balance} onChange={(e) => { setBalance(e.target.value); setPage(1); }}>
+            <option value="all">All balances</option><option value="payable">Payable</option><option value="advance">Advance</option>
+          </select>
+        ) : (
+          <select aria-label="Balance filter" value={balance} onChange={(e) => { setBalance(e.target.value); setPage(1); }}>
+            <option value="all">All balances</option><option value="receivable">Receivable</option><option value="credit">Credit / Advance</option>
+          </select>
+        )}
       </>}
     </div>
     <p className="dashboard__note">Search by name, mobile, address or GSTIN</p>
@@ -153,14 +169,24 @@ function AccountList({ type, ranking = false, dates, expanded = false, initialSe
             {row.is_active === false && <span className="dashboard__inactive">Inactive account</span>}
           </>}
         </div>
-        {(ranking || type === 'supplier') && <div className="dashboard__account-amount"><Money value={ranking ? row.net_amount : row.current_balance} compact={ranking && !expanded} />
-          {!ranking && row.current_balance != null && <span className={`dashboard__badge dashboard__badge--${row.balance_type === 'Credit' ? 'payable' : 'advance'}`}>{row.balance_type === 'Credit' ? 'Payable' : 'Advance'}</span>}
-        </div>}
+        <div className="dashboard__account-amount"><Money value={ranking ? row.net_amount : row.current_balance} compact={ranking && !expanded} />
+          {!ranking && row.current_balance != null && (
+            <span className={`dashboard__badge dashboard__badge--${
+              type === 'supplier'
+                ? (row.balance_type === 'Credit' ? 'payable' : 'advance')
+                : (row.balance_type === 'Debit' ? 'advance' : 'payable')
+            }`}>
+              {type === 'supplier'
+                ? (row.balance_type === 'Credit' ? 'To pay' : 'Credit with supplier')
+                : (row.balance_type === 'Debit' ? 'Receivable' : 'Customer credit')}
+            </span>
+          )}
+        </div>
       </div>)}</div> : <Empty title={ranking ? 'No business partners found' : `No ${noun} found`} hint="Try a different name, phone, address or GSTIN." />}
       {expanded && <Pagination page={page} totalPages={Math.ceil((request.data?.total || 0) / limit)} total={request.data?.total || 0} pageSize={limit} onPageChange={setPage} />}
     </Status>
     {!expanded && <div className="dashboard__list-footer"><span>{request.loading || pending ? 'Searching accounts' : `${Math.min(5, request.data?.total || 0)} of ${request.data?.total || 0} ${noun}`}</span><Button variant="ghost" size="sm" className="dashboard__view-all" onClick={() => setOpen(true)}>View All <span aria-hidden="true">→</span></Button></div>}
-    {!expanded && <Modal open={open} title={ranking ? 'Top Business Partners' : 'Account Insights'} width={940} onClose={() => setOpen(false)}>
+    {!expanded && <Modal open={open} title={ranking ? 'Largest trading partners' : 'Account details'} width={940} onClose={() => setOpen(false)}>
       {open && <ViewAll type={type} ranking={ranking} dates={dates} search={search} />}
     </Modal>}
   </>;
@@ -169,10 +195,22 @@ function AccountList({ type, ranking = false, dates, expanded = false, initialSe
 function PartnerSection({ ranking = false, dates, summary }) {
   const [type, setType] = useState('supplier');
   return <section className="dashboard__panel">
-    <Heading title={ranking ? 'Top Business Partners' : 'Account Insights'} subtitle={ranking ? `Ranked by net ${type === 'supplier' ? 'purchase' : 'sales'}` : 'A clear view of your business accounts'}>
+    <Heading title={ranking ? 'Largest trading partners' : 'Account details'} subtitle={ranking ? `Ranked by net ${type === 'supplier' ? 'purchase' : 'sales'}` : 'A clear view of your business accounts'}>
       <select aria-label={ranking ? 'Business partner type' : 'Account type'} value={type} onChange={(e) => setType(e.target.value)}><option value="supplier">Supplier</option><option value="customer">Customer</option></select>
     </Heading>
-    {!ranking && (type === 'supplier' ? <div className="dashboard__account-summary"><div><span>Total Payable</span><Money value={summary?.supplier_payable} /></div><div><span>Total Advance</span><Money value={summary?.supplier_advance} /></div></div> : <p className="dashboard__pending">Receivable tracking pending. Browse customer details below.</p>)}
+    {!ranking && (
+      type === 'supplier' ? (
+        <div className="dashboard__account-summary">
+          <div><span>To pay suppliers</span><Money value={summary?.supplier_payable} /></div>
+          <div><span>Credit with suppliers</span><Money value={summary?.supplier_advance} /></div>
+        </div>
+      ) : (
+        <div className="dashboard__account-summary">
+          <div><span>Receivable from customers</span><Money value={summary?.customer_receivable} /></div>
+          <div><span>Customer credit / advance</span><Money value={summary?.customer_credit} /></div>
+        </div>
+      )
+    )}
     <AccountList key={ranking ? `${type}-${JSON.stringify(dates)}` : type} type={type} ranking={ranking} dates={dates} />
   </section>;
 }
@@ -180,9 +218,9 @@ function PartnerSection({ ranking = false, dates, summary }) {
 function CashFlow({ request }) {
   const data = request.data;
   const maximum = data ? Math.max(1, Number(data.total_received), Number(data.total_paid)) : 1;
-  return <section className="dashboard__panel dashboard__cash"><Heading title="Cash Flow" subtitle="Money in and money out" />
+  return <section className="dashboard__panel dashboard__cash"><Heading title="Money received and paid" subtitle="Rojmel entries in the selected period" />
     <Status request={request} name="cash flow">{data && <>
-      <div className="dashboard__cash-net"><span>Net Cash Flow</span><Money value={data.net_cash_flow} compact /><small>{Number(data.net_cash_flow) >= 0 ? 'Receipts cover payments' : 'Payments exceed receipts'}</small></div>
+      <div className={`dashboard__cash-net dashboard__cash-net--${Number(data.net_cash_flow) > 0 ? 'positive' : Number(data.net_cash_flow) < 0 ? 'negative' : 'zero'}`}><span>Received minus paid</span><Money value={data.net_cash_flow} /><small>{Number(data.net_cash_flow) > 0 ? 'More money received than paid.' : Number(data.net_cash_flow) < 0 ? 'More money paid than received.' : 'Money received and paid are equal.'}</small></div>
       {[
         ['Received', data.total_received, 'teal'], ['Paid', data.total_paid, 'blue'],
       ].map(([label, value, tone]) => <div className="dashboard__comparison" key={label}><div><span>{label}</span><Money value={value} /></div><div className={`dashboard__bar dashboard__bar--${tone}`}><i style={{ width: `${Math.max(0, Number(value)) / maximum * 100}%` }} /></div></div>)}
@@ -193,14 +231,14 @@ function CashFlow({ request }) {
 
 function Performance({ request }) {
   const data = request.data;
-  return <section className="dashboard__panel"><Heading title="Business Performance" subtitle="Gross volume, net volume and returns" />
-    <Status request={request} name="business performance">{data && <>
-      <dl className="dashboard__performance-totals">{[['Gross Sales', 'total_sales'], ['Net Sales', 'net_sales'], ['Gross Purchase', 'total_purchase'], ['Net Purchase', 'net_purchase']].map(([label, key]) => <div key={key}><dt>{label}</dt><dd><Money value={data[key]} /></dd></div>)}</dl>
-      {['sales', 'purchase'].map((kind) => <div className="dashboard__return" key={kind}>
-        <div><span>{kind === 'sales' ? 'Sales' : 'Purchase'} Return Rate <abbr title={`${kind === 'sales' ? 'Sales' : 'Purchase'} Return ÷ Gross ${kind === 'sales' ? 'Sales' : 'Purchase'} × 100`}>ⓘ</abbr></span><strong>{data[`${kind}_return_rate`]}%</strong></div>
-        <div className={`dashboard__bar dashboard__bar--${kind === 'sales' ? 'blue' : 'teal'}`} role="meter" aria-label={`${kind} return rate`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.max(0, Number(data[`${kind}_return_rate`])))} aria-valuetext={`${data[`${kind}_return_rate`]} percent`}><i style={{ width: `${Math.min(100, Math.max(0, Number(data[`${kind}_return_rate`])))}%` }} /></div>
-        <small>Returns <Money value={data[`total_${kind}_return`]} />{Number(data[`${kind}_return_rate`]) > 100 ? ' · Rate exceeds 100%; bar capped at full width.' : ''}</small>
-      </div>)}
+  return <section className="dashboard__panel"><Heading title="Returns and totals after returns" subtitle="Selected period" />
+    <Status request={request} name="returns">{data && <>
+      <dl className="dashboard__performance-totals">{[
+        ['Customer returns', 'total_sales_return'], ['Sales after returns', 'net_sales'],
+        ['Returns to suppliers', 'total_purchase_return'], ['Purchases after returns', 'net_purchase'],
+      ].map(([label, key]) => <div key={key}><dt>{label}</dt><dd><Money value={data[key]} /></dd></div>)}</dl>
+      <p className="dashboard__note">After returns means recorded value minus returns in this period.</p>
+      <div className="dashboard__links"><Link to="/sales-return-history">Customer return history</Link><Link to="/purchase-return-history">Purchase return history</Link></div>
     </>}</Status>
   </section>;
 }
@@ -220,9 +258,22 @@ function Overview({ dates }) {
   const recent = useDashboard('recent-transactions', dates);
   return <>
     <Summary request={summary} />
-    <div className="dashboard__analytics-grid"><section className="dashboard__panel"><Heading title="Sales vs Purchase" subtitle="Business transaction trend"><span className="dashboard__subtle-tag">{dates.period ? 'Selected period' : 'Last 6 months'}</span></Heading><Status request={trend} name="trend data" shape="chart">{trend.data && <DashboardTrend key={JSON.stringify(dates)} data={trend.data} />}</Status></section><CashFlow request={summary} /></div>
-    <div className="dashboard__accounts-grid"><PartnerSection dates={dates} summary={summary.data} /><PartnerSection ranking dates={dates} /></div>
-    <div className="dashboard__analytics-grid"><RecentTransactions request={recent} /><Performance request={summary} /></div>
+    <nav className="dashboard__quick-actions" aria-label="Quick actions">
+      <strong>Quick actions</strong>
+      <Link to="/sales-entry"><SalesIcon /> New sale</Link>
+      <Link to="/purchase-entry"><PurchaseIcon /> New purchase</Link>
+      <Link to="/parties?openAdd=1"><PartyIcon /> New account</Link>
+      <Link to="/items?openAdd=1"><BillHistoryIcon /> New item</Link>
+      <Link to="/rojmel"><RojmelIcon /> Open Rojmel</Link>
+    </nav>
+    <div className="dashboard__accounts-grid"><Performance request={summary} /><CashFlow request={summary} /></div>
+    <div className="dashboard__analytics-grid">
+      <section className="dashboard__panel"><Heading title="Sales and purchases over time" subtitle={dates.period ? 'Monthly totals for the selected period, before returns' : 'Last 6 months, before returns'} /><Status request={trend} name="monthly activity" shape="chart">{trend.data && <DashboardTrend key={JSON.stringify(dates)} data={trend.data} />}</Status></section>
+      <RecentTransactions request={recent} />
+    </div>
+    <details className="dashboard__more"><summary>Explore accounts and trading partners <span>Search contacts, supplier balances and business rankings</span></summary>
+      <div className="dashboard__accounts-grid"><PartnerSection dates={dates} summary={summary.data} /><PartnerSection ranking dates={dates} /></div>
+    </details>
   </>;
 }
 
@@ -233,7 +284,7 @@ export default function Dashboard() {
   const valid = period !== 'custom' || (start && end && start <= end && (Date.parse(end) - Date.parse(start)) / 86400000 <= 3660);
   const dates = period ? { period, ...(period === 'custom' ? { start_date: start, end_date: end } : {}) } : {};
   return <div className="page"><div className="dashboard">
-    <header className="dashboard__header"><div><span className="dashboard__eyebrow">BUSINESS INTELLIGENCE</span><h1>Dashboard</h1><p>Business overview and financial performance</p></div><div className="dashboard__date-controls"><label><span>Reporting period</span><select aria-label="Dashboard date filter" value={period} onChange={(e) => setPeriod(e.target.value)}><option value="">Overview · This month</option><option value="today">Today</option><option value="week">This Week</option><option value="month">This Month</option><option value="financial_year">This Financial Year</option><option value="custom">Custom Range</option></select></label>{period === 'custom' && <><label><span>From</span><input aria-label="Start date" type="date" value={start} max={end || undefined} onChange={(e) => setStart(e.target.value)} /></label><label><span>To</span><input aria-label="End date" type="date" value={end} min={start} onChange={(e) => setEnd(e.target.value)} /></label></>}</div></header>
+    <header className="dashboard__header"><div><span className="dashboard__eyebrow">YOUR BUSINESS AT A GLANCE</span><h1>Dashboard</h1><p>See what is owed, what was sold and what was purchased.</p></div><div className="dashboard__date-controls"><label><span>Reporting period</span><select aria-label="Dashboard date filter" value={period} onChange={(e) => setPeriod(e.target.value)}><option value="">This month + 6-month trend</option><option value="today">Today</option><option value="week">This Week</option><option value="month">This Month</option><option value="financial_year">This Financial Year</option><option value="custom">Custom Range</option></select></label>{period === 'custom' && <><label><span>From</span><input aria-label="Start date" type="date" value={start} max={end || undefined} onChange={(e) => setStart(e.target.value)} /></label><label><span>To</span><input aria-label="End date" type="date" value={end} min={start} onChange={(e) => setEnd(e.target.value)} /></label></>}</div></header>
     {valid ? <Overview dates={dates} /> : <div className="dashboard__panel dashboard__date-prompt" role="status">Select a valid start and end date, up to ten years apart, to view this period.</div>}
   </div></div>;
 }

@@ -1,0 +1,2 @@
+# Preserve the exact bytes pinned by the historical Phase 2B migration.
+backend/alembic/data/phase_2b_approved.json -text

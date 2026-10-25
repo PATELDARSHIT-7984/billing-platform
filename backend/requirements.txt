@@ -1,0 +1,10 @@
+# Runtime versions used by the verified Python 3.12 backend.
+fastapi==0.136.1
+uvicorn==0.44.0
+SQLAlchemy==2.0.51
+psycopg2-binary==2.9.12
+pydantic==2.12.5
+email-validator==2.3.0
+python-dotenv==1.2.2
+# Required for deployment migrations; not imported by request handlers.
+alembic==1.19.1

@@ -89,9 +89,6 @@ export default function PurchaseHistory() {
   };
 
   const columns = [
-    { key: 'pdf', label: 'Download PDF', render: (row) => (
-      <PdfDownloadActions type="purchase" loadDetail={() => fetchPurchaseById(row.id)} />
-    ) },
     {
       key: 'bill_no',
       label: 'Bill No.',
@@ -142,6 +139,13 @@ export default function PurchaseHistory() {
       align: 'right',
       render: (row) => (
         <strong>{formatCurrency(row.grand_total)}</strong>
+      ),
+    },
+    {
+      key: 'pdf',
+      label: 'Download PDF',
+      render: (row) => (
+        <PdfDownloadActions type="purchase" loadDetail={() => fetchPurchaseById(row.id)} />
       ),
     },
   ];

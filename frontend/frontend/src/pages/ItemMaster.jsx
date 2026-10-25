@@ -1,3 +1,5 @@
+import { safeOrigin } from '../utils/draftStorage';
+import { useManagedDestination } from '../hooks/useManagedCreate';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/common/PageHeader';
@@ -22,12 +24,13 @@ function uniqueSorted(values) {
 }
 
 export default function ItemMaster() {
+  const managedCreate = useManagedDestination('item');
   const toast = useToast();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  const returnTo = searchParams.get('returnTo');
-  const shouldOpenAdd = searchParams.get('openAdd') === '1';
+  const returnTo = safeOrigin(searchParams.get('returnTo')) ? searchParams.get('returnTo') : null;
+  const shouldOpenAdd = managedCreate.active || searchParams.get('openAdd') === '1';
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -110,13 +113,19 @@ export default function ItemMaster() {
       key: 'cgst',
       label: 'CGST %',
       align: 'right',
-      render: (row) => `${row.cgst}%`,
+      render: (row) => (row.cgst && Number(row.cgst) > 0 ? `${row.cgst}%` : '0%'),
     },
     {
       key: 'sgst',
       label: 'SGST %',
       align: 'right',
-      render: (row) => `${row.sgst}%`,
+      render: (row) => (row.sgst && Number(row.sgst) > 0 ? `${row.sgst}%` : '0%'),
+    },
+    {
+      key: 'igst',
+      label: 'IGST %',
+      align: 'right',
+      render: (row) => (row.igst && Number(row.igst) > 0 ? `${row.igst}%` : '0%'),
     },
   ];
 
@@ -162,6 +171,7 @@ export default function ItemMaster() {
             : 'Item added successfully.',
         );
 
+        if (modalMode === 'add' && managedCreate.finish(savedItem)) return;
         setModalOpen(false);
         loadItems(search);
 
@@ -220,7 +230,7 @@ export default function ItemMaster() {
         categoryOptions={categoryOptions}
         brandOptions={brandOptions}
         submitting={submitting}
-        onClose={() => setModalOpen(false)}
+        onClose={() => { if (!managedCreate.finish()) setModalOpen(false); }}
         onSubmit={handleFormSubmit}
       />
 

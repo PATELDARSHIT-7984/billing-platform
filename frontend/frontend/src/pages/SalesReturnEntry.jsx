@@ -1,3 +1,8 @@
+import { useManagedOrigin } from '../hooks/useManagedCreate';
+import ManagedCreateButton from '../components/common/ManagedCreateButton';
+import AccountSelector from '../components/common/AccountSelector';
+import { fetchAccountRecord } from '../services/accountService';
+import { handleEnterNavigation } from '../utils/enterNavigation';
 import DoneBySelect from '../components/common/DoneBySelect';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -11,7 +16,6 @@ import {
   FormTextarea,
 } from '../components/common/FormField';
 import { useToast } from '../context/ToastContext';
-import { fetchCustomers, fetchCustomerById } from '../services/customerService';
 import { fetchItems } from '../services/itemService';
 import {
   createSalesReturn,
@@ -20,7 +24,6 @@ import {
   updateSalesReturn,
 } from '../services/salesReturnService';
 import { extractErrorMessage } from '../services/api';
-import { saveDraft, loadDraft, clearDraft } from '../utils/draftStorage';
 import { UNIT_OPTIONS } from '../config/units';
 import {
   computeLineAmounts,
@@ -108,12 +111,9 @@ export default function SalesReturnEntry() {
   const toast = useToast();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const newCustomerId = searchParams.get('newCustomerId');
   const editId = searchParams.get('edit');
   const loadedEditId = useRef(null);
-  const DRAFT_KEY = 'sales-return-entry';
 
-  const [customers, setCustomers] = useState([]);
   const [itemRecords, setItemRecords] = useState([]);
   const [details, setDetails] = useState(createEmptyDetails);
   const [itemForm, setItemForm] = useState(createEmptyItem);
@@ -124,19 +124,34 @@ export default function SalesReturnEntry() {
   const [saving, setSaving] = useState(false);
   const [loadingSalesReturn, setLoadingSalesReturn] = useState(false);
 
-  const loadCustomers = () => fetchCustomers({ search: '' })
-    .then((data) => setCustomers(data.filter((customer) => customer.is_active !== false)))
-    .catch((error) => toast.error(extractErrorMessage(error)));
+  const managed = useManagedOrigin(
+    () => ({ details, items, itemForm, editingIndex, detailErrors, itemErrors }),
+    (draft) => {
+      setDetails(draft.details); setItems(draft.items); setItemForm(draft.itemForm);
+      setEditingIndex(draft.editingIndex); setDetailErrors(draft.detailErrors); setItemErrors(draft.itemErrors);
+      loadedEditId.current = editId;
+    },
+    (entity, record) => {
+      if (entity === 'item') {
+        setItemRecords((rows) => [...rows.filter((row) => row.id !== record.id), record]);
+        selectItem({ value: record.id, label: record.name, record });
+      } else if (entity === 'doneBy') {
+        setDetails((previous) => ({ ...previous, done_by: record.name, _doneBy: record }));
+      } else if (entity === 'account' && record.source === 'customer') {
+        // A create-and-return detour preserves entered contacts, lines and financial values.
+        setDetails((previous) => ({ ...previous, customer_id: record.id, _account: record, _accountType: record.accountType }));
+      }
+    },
+  );
 
   const loadItems = () => fetchItems({ search: '' })
     .then((data) => setItemRecords(data.filter((item) => item.is_active !== false)))
     .catch((error) => toast.error(extractErrorMessage(error)));
 
   useEffect(() => {
-    loadCustomers();
     loadItems();
 
-    const restoringDraft = !editId && Boolean(loadDraft(DRAFT_KEY));
+    const restoringDraft = managed.restoring;
 
     if (!editId && !restoringDraft) {
       fetchNextSalesReturnNumbers()
@@ -153,40 +168,8 @@ export default function SalesReturnEntry() {
   }, [editId]);
 
   useEffect(() => {
-    if (editId) return;
-    const draft = loadDraft(DRAFT_KEY);
-    if (!draft) return;
-    setDetails(draft.details);
-    setItems(draft.items);
-    setItemForm(draft.itemForm);
-    clearDraft(DRAFT_KEY);
-  }, []);
-
-  useEffect(() => {
-    if (!newCustomerId || !customers.length) return;
-    const customer = customers.find((row) => Number(row.id) === Number(newCustomerId));
-    if (!customer) return;
-
-    fetchCustomerById(getCustomerId(customer))
-      .then((full) => {
-        setDetails((previous) => ({
-          ...previous,
-          customer_id: getCustomerId(full),
-          address: full?.address || '',
-          city: full?.city || '',
-          customer_state: full?.state || '',
-          contact_no: full?.mobile || '',
-          email: full?.email || '',
-        }));
-      })
-      .catch((error) => toast.error(extractErrorMessage(error)));
-  }, [newCustomerId, customers]);
-
-
-  useEffect(() => {
     if (
-      !editId
-      || !customers.length
+      !editId || managed.restoring
       || !itemRecords.length
       || loadedEditId.current === editId
     ) return;
@@ -195,12 +178,11 @@ export default function SalesReturnEntry() {
     setLoadingSalesReturn(true);
 
     fetchSalesReturnById(editId)
-      .then((salesReturn) => {
-        const customer = customers.find(
-          (row) => Number(row.id) === Number(salesReturn.customer_id),
-        );
+      .then(async (salesReturn) => {
+        const customer = await fetchAccountRecord('customer', salesReturn.customer_id, salesReturn);
 
         setDetails({
+          _account: customer,
           customer_id: salesReturn.customer_id ?? null,
           return_no: salesReturn.return_no || '',
           order_no: salesReturn.order_no || '',
@@ -257,17 +239,7 @@ export default function SalesReturnEntry() {
         navigate('/sales-return-history');
       })
       .finally(() => setLoadingSalesReturn(false));
-  }, [editId, customers, itemRecords, navigate, toast]);
-
-  const customerOptions = useMemo(
-    () => customers.map((customer) => ({
-      value: getCustomerId(customer),
-      label: customer.customer_name || customer.name || 'Unnamed Customer',
-      meta: customer.city || customer.mobile || '',
-      record: customer,
-    })),
-    [customers],
-  );
+  }, [editId, itemRecords, navigate, toast]);
 
   const itemOptions = useMemo(
     () => itemRecords.map((item) => ({
@@ -305,6 +277,7 @@ export default function SalesReturnEntry() {
   const applySelectedCustomer = (customer) => {
     setDetails((previous) => ({
       ...previous,
+      _account: customer,
       customer_id: getCustomerId(customer),
       address: customer?.address || '',
       city: customer?.city || '',
@@ -338,15 +311,11 @@ export default function SalesReturnEntry() {
       return;
     }
 
-    fetchCustomerById(nextId)
-      .then((customer) => {
-        applySelectedCustomer(customer);
-        toast.success('Customer changed. Items and delivery details were cleared.');
-      })
-      .catch((error) => toast.error(extractErrorMessage(error)));
+    applySelectedCustomer(option.record);
+    toast.success('Customer changed. Items and delivery details were cleared.');
   };
 
-  const selectItem = (option) => {
+  function selectItem(option) {
     if (!option) {
       setItemForm(createEmptyItem());
       return;
@@ -532,7 +501,7 @@ export default function SalesReturnEntry() {
   };
 
   return (
-    <div className="page general-transaction purchase-entry-final">
+    <div className="page general-transaction purchase-entry-final" data-enter-navigation onKeyDown={handleEnterNavigation}>
       <header className="gt-page-header">
         <div>
           <h1>{editId ? 'Update Sales Return' : 'Sales Return Entry'}</h1>
@@ -547,29 +516,14 @@ export default function SalesReturnEntry() {
 
       <Card title="Transaction Details" className="gt-card">
         <div className="gt-details-grid">
-          <div className="gt-with-action">
-            <SearchableSelect
-              label="Customer"
-              options={customerOptions}
+          <AccountSelector domain="customer" record={details._account}
+              defaultType={details._accountType}
+              onCreate={(accountType) => managed.begin('account', { accountType, source: 'customer' })}
               value={details.customer_id}
-              onChange={selectCustomer}
-              placeholder="Search customer..."
+              onChange={(option, type) => { setDetails((previous) => ({ ...previous, _accountType: option?.accountType || type })); selectCustomer(option); }}
               required
               error={detailErrors.customer_id}
             />
-            <button
-              type="button"
-              className="gt-plus"
-              onClick={() => {
-                saveDraft(DRAFT_KEY, { details, items, itemForm });
-                navigate('/customers?openAdd=1&returnTo=/sales-return-entry');
-              }}
-              title="Add new customer"
-              aria-label="Add new customer"
-            >
-              +
-            </button>
-          </div>
 
           <FormInput label="Return No." value={details.return_no} disabled />
           <FormInput label="Order No." value={details.order_no} disabled />
@@ -615,6 +569,7 @@ export default function SalesReturnEntry() {
           <FormInput label="Contact No." value={details.contact_no} onChange={() => {}} disabled />
           <FormInput label="Email" value={details.email} onChange={() => {}} disabled />
           <DoneBySelect
+            onCreate={() => managed.begin('doneBy')} createdPerson={details._doneBy}
             label="Done By"
             value={details.done_by}
             onChange={(value) => changeDetail('done_by', value)}
@@ -645,6 +600,7 @@ export default function SalesReturnEntry() {
       <Card title="Item Entry" className="gt-card">
         <div className="gt-item-top">
           <SearchableSelect
+            action={<ManagedCreateButton entity="item" onClick={() => managed.begin('item')} />}
             label="Item Name"
             options={itemOptions}
             value={itemForm.item_id}

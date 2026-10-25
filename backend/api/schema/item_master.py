@@ -19,6 +19,7 @@ class ItemMasterCreate(BaseModel):
 
     cgst: float = Field(default=9.0, ge=0, le=100)
     sgst: float = Field(default=9.0, ge=0, le=100)
+    igst: float = Field(default=0.0, ge=0, le=100)
 
     category: Optional[str] = Field(default=None, max_length=150)
     brand: Optional[str] = Field(default=None, max_length=150)
@@ -82,6 +83,7 @@ class ItemMasterUpdate(BaseModel):
 
     cgst: Optional[float] = Field(default=None, ge=0, le=100)
     sgst: Optional[float] = Field(default=None, ge=0, le=100)
+    igst: Optional[float] = Field(default=None, ge=0, le=100)
 
     category: Optional[str] = Field(default=None, max_length=150)
     brand: Optional[str] = Field(default=None, max_length=150)
@@ -145,6 +147,7 @@ class ItemMasterResponse(BaseModel):
 
     cgst: float
     sgst: float
+    igst: float = 0.0
 
     category: Optional[str] = None
     brand: Optional[str] = None

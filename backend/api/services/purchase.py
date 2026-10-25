@@ -1,3 +1,4 @@
+from api.services.account_provisioning import resolve_ledger_reference
 from api.validation.done_by import validate_done_by_snapshot
 from api.utils.rounding import round_half_up
 from collections import defaultdict
@@ -397,6 +398,10 @@ def create_purchase(
         ),
         "is_active": True,
     }
+
+    ledger_id, role = resolve_ledger_reference(db, "party", purchase_data.party_id)
+    purchase_payload["account_ledger_id"] = ledger_id
+    purchase_payload["account_role"] = role
 
     try:
         purchase = purchase_repo.create_purchase(
@@ -931,6 +936,12 @@ def update_purchase_by_id(
         # -------------------------------------------------------------------------
         # Update Purchase
         # -------------------------------------------------------------------------
+        effective_party_id = update_payload.get("party_id", purchase.party_id)
+        if effective_party_id:
+            ledger_id, role = resolve_ledger_reference(db, "party", effective_party_id)
+            update_payload["account_ledger_id"] = ledger_id
+            update_payload["account_role"] = role
+
         updated_purchase = (
             purchase_repo.update_purchase(
                 db,
@@ -967,17 +978,9 @@ def update_purchase_by_id(
         # reverse old supplier purchase,
         # then apply complete purchase to new supplier.
         else:
-            apply_party_balance_delta(
-                db,
-                old_party_id,
-                -old_grand_total,
-            )
-
-            apply_party_balance_delta(
-                db,
-                new_party_id,
-                new_grand_total,
-            )
+            # Consistent account lock order for opposite-direction switches.
+            for party_id, delta in sorted(((old_party_id, -old_grand_total), (new_party_id, new_grand_total))):
+                apply_party_balance_delta(db, party_id, delta)
 
         # -------------------------------------------------------------------------
         # One final transaction commit

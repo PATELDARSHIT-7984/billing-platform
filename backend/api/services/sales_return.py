@@ -1,3 +1,5 @@
+from api.services.account_provisioning import resolve_ledger_reference
+from api.services.customer import replace_customer_effect
 from api.validation.done_by import validate_done_by_snapshot
 from api.utils.rounding import round_half_up
 from collections import defaultdict
@@ -776,6 +778,10 @@ def create_sales_return(
         "is_active": True,
     }
 
+    ledger_id, role = resolve_ledger_reference(db, "customer", sales_return_data.customer_id)
+    record_payload["account_ledger_id"] = ledger_id
+    record_payload["account_role"] = role
+
     try:
         record = (
             sales_return_repo
@@ -855,6 +861,7 @@ def create_sales_return(
                 Decimal(str(item_master.current_stock or 0)) + Decimal(str(item_data.quantity))
             )
 
+        replace_customer_effect(db, new_id=record.customer_id, new_effect=record.grand_total)
         db.commit()
     except Exception:
         db.rollback()
@@ -947,6 +954,8 @@ def update_sales_return_by_id(
             sales_return_id,
         )
     )
+
+    old_customer_id, old_total = record.customer_id, record.grand_total
 
     if "done_by" in sales_return_data.model_fields_set:
         validate_done_by_snapshot(db, sales_return_data.done_by, previous=record.done_by)
@@ -1467,6 +1476,12 @@ def update_sales_return_by_id(
         # SAVE
         # =========================================================================
 
+        effective_customer_id = update_payload.get("customer_id", record.customer_id)
+        if effective_customer_id:
+            ledger_id, role = resolve_ledger_reference(db, "customer", effective_customer_id)
+            update_payload["account_ledger_id"] = ledger_id
+            update_payload["account_role"] = role
+
         updated_record = (
             sales_return_repo
             .update_sales_return(
@@ -1476,6 +1491,7 @@ def update_sales_return_by_id(
             )
         )
 
+        replace_customer_effect(db, old_customer_id, old_total, record.customer_id, record.grand_total)
         db.commit()
 
     except Exception:
@@ -1549,6 +1565,7 @@ def delete_sales_return_by_id(
             record,
         )
 
+        replace_customer_effect(db, old_id=record.customer_id, old_effect=record.grand_total)
         db.commit()
 
     except Exception:

@@ -19,6 +19,7 @@ class RojmelBase(BaseModel):
     effective_date: date
 
     party_id: Optional[int] = None
+    customer_id: Optional[int] = None
 
     cash_bank_id: int
     done_by_id: int
@@ -51,6 +52,7 @@ class RojmelUpdate(BaseModel):
     given_taken_date: Optional[date] = None
     effective_date: Optional[date] = None
     party_id: Optional[int] = None
+    customer_id: Optional[int] = None
     cash_bank_id: Optional[int] = None
     done_by_id: Optional[int] = None
     pay_mode: Optional[str] = None

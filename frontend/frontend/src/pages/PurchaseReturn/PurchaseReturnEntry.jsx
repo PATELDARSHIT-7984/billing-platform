@@ -1,3 +1,8 @@
+import { useManagedOrigin } from '../../hooks/useManagedCreate';
+import ManagedCreateButton from '../../components/common/ManagedCreateButton';
+import AccountSelector from '../../components/common/AccountSelector';
+import { fetchAccountRecord } from '../../services/accountService';
+import { handleEnterNavigation } from '../../utils/enterNavigation';
 import DoneBySelect from '../../components/common/DoneBySelect';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -10,9 +15,7 @@ import {
   FormTextarea,
   FormCheckbox,
 } from '../../components/common/FormField';
-import PartyFormModal from '../PartyFormModal';
 import { useToast } from '../../context/ToastContext';
-import { fetchParties, createParty } from '../../services/partyService';
 import { fetchItems } from '../../services/itemService';
 import { createPurchaseReturn, fetchNextPurchaseReturnNumbers, fetchPurchaseReturnById, updatePurchaseReturn } from '../../services/purchaseReturnService';
 import { extractErrorMessage } from '../../services/api';
@@ -103,7 +106,6 @@ export default function PurchaseReturnEntry() {
   const editId = searchParams.get('edit');
   const loadedEditId = useRef(null);
 
-  const [parties, setParties] = useState([]);
   const [itemRecords, setItemRecords] = useState([]);
   const [details, setDetails] = useState(createEmptyDetails);
   const [itemForm, setItemForm] = useState(createEmptyItem);
@@ -111,15 +113,27 @@ export default function PurchaseReturnEntry() {
   const [detailErrors, setDetailErrors] = useState({});
   const [itemErrors, setItemErrors] = useState({});
   const [editingIndex, setEditingIndex] = useState(null);
-  const [partyModalOpen, setPartyModalOpen] = useState(false);
-  const [submittingParty, setSubmittingParty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadingPurchase, setLoadingPurchase] = useState(false);
 
-  const loadParties = () => (
-    fetchParties({ search: '' })
-      .then((data) => setParties(data.filter((party) => party.party_type === 'Supplier')))
-      .catch((error) => toast.error(extractErrorMessage(error)))
+  const managed = useManagedOrigin(
+    () => ({ details, items, itemForm, editingIndex, detailErrors, itemErrors }),
+    (draft) => {
+      setDetails(draft.details); setItems(draft.items); setItemForm(draft.itemForm);
+      setEditingIndex(draft.editingIndex); setDetailErrors(draft.detailErrors); setItemErrors(draft.itemErrors);
+      loadedEditId.current = editId;
+    },
+    (entity, record) => {
+      if (entity === 'item') {
+        setItemRecords((rows) => [...rows.filter((row) => row.id !== record.id), record]);
+        selectItem({ value: record.id, label: record.name, record });
+      } else if (entity === 'doneBy') {
+        setDetails((previous) => ({ ...previous, done_by: record.name, _doneBy: record }));
+      } else if (entity === 'account' && record.source === 'party') {
+        // A create-and-return detour preserves entered contacts, lines and financial values.
+        setDetails((previous) => ({ ...previous, party_id: record.id, _account: record, _accountType: record.accountType }));
+      }
+    },
   );
 
   const loadItems = () => (
@@ -129,10 +143,9 @@ export default function PurchaseReturnEntry() {
   );
 
   useEffect(() => {
-    loadParties();
     loadItems();
 
-    if (!editId) {
+    if (!editId && !managed.restoring) {
       fetchNextPurchaseReturnNumbers()
         .then((numbers) => {
           setDetails((previous) => ({
@@ -148,14 +161,15 @@ export default function PurchaseReturnEntry() {
 
 
   useEffect(() => {
-    if (!editId || !parties.length || loadedEditId.current === editId) return;
+    if (!editId || managed.restoring || loadedEditId.current === editId) return;
 
     setLoadingPurchase(true);
     fetchPurchaseReturnById(editId)
-      .then((purchaseReturn) => {
-        const selectedParty = parties.find((party) => party.id === purchaseReturn.party_id);
+      .then(async (purchaseReturn) => {
+        const selectedParty = await fetchAccountRecord('party', purchaseReturn.party_id, purchaseReturn);
 
         setDetails({
+          _account: selectedParty,
           party_id: purchaseReturn.party_id,
           return_no: purchaseReturn.return_no || '',
           order_no: purchaseReturn.order_no || '',
@@ -206,17 +220,7 @@ export default function PurchaseReturnEntry() {
         navigate('/purchase-return-history');
       })
       .finally(() => setLoadingPurchase(false));
-  }, [editId, parties, navigate, toast]);
-
-  const partyOptions = useMemo(
-    () => parties.map((party) => ({
-      value: party.id,
-      label: party.name,
-      meta: party.city || party.mobile || '',
-      record: party,
-    })),
-    [parties],
-  );
+  }, [editId, navigate, toast]);
 
   const itemOptions = useMemo(
     () => itemRecords.map((item) => ({
@@ -257,6 +261,7 @@ export default function PurchaseReturnEntry() {
   const applySelectedParty = (party) => {
     setDetails((previous) => ({
       ...previous,
+      _account: party,
       party_id: party?.id || null,
       address: party?.address || '',
       city: party?.city || '',
@@ -302,21 +307,7 @@ export default function PurchaseReturnEntry() {
     }
   };
 
-  const saveParty = (payload) => {
-    setSubmittingParty(true);
-
-    createParty({ ...payload, party_type: 'Supplier' })
-      .then((created) => {
-        setParties((previous) => [...previous, created]);
-        applySelectedParty(created);
-        setPartyModalOpen(false);
-        toast.success('Supplier added and selected. Items and delivery details were cleared.');
-      })
-      .catch((error) => toast.error(extractErrorMessage(error)))
-      .finally(() => setSubmittingParty(false));
-  };
-
-  const selectItem = (option) => {
+  function selectItem(option) {
     if (!option) {
       setItemForm((previous) => ({
         ...previous,
@@ -537,7 +528,7 @@ export default function PurchaseReturnEntry() {
   };
 
   return (
-    <div className="page general-transaction purchase-entry-final">
+    <div className="page general-transaction purchase-entry-final" data-enter-navigation onKeyDown={handleEnterNavigation}>
       <header className="gt-page-header">
         <div>
           <h1>{editId ? 'Update Purchase Return' : 'Purchase Return Entry'}</h1>
@@ -552,28 +543,15 @@ export default function PurchaseReturnEntry() {
 
       <Card title="Transaction Details" className="gt-card">
         <div className="gt-details-grid">
-          <div className="gt-with-action">
-            <SearchableSelect
-              label="Supplier"
+          <AccountSelector domain="party" record={details._account}
+              defaultType={details._accountType}
+              onCreate={(accountType) => managed.begin('account', { accountType, source: 'party' })}
               name="party_id"
-              options={partyOptions}
               value={details.party_id}
-              onChange={selectParty}
-              placeholder="Search supplier..."
+              onChange={(option, type) => { setDetails((previous) => ({ ...previous, _accountType: option?.accountType || type })); selectParty(option); }}
               required
               error={detailErrors.party_id}
-              emptyMessage="No supplier found. Use + to add one."
             />
-            <button
-              type="button"
-              className="gt-plus"
-              onClick={() => setPartyModalOpen(true)}
-              title="Add new supplier"
-              aria-label="Add new supplier"
-            >
-              +
-            </button>
-          </div>
 
           <FormInput
             label="Return No."
@@ -664,6 +642,7 @@ export default function PurchaseReturnEntry() {
           />
 
           <DoneBySelect
+            onCreate={() => managed.begin('doneBy')} createdPerson={details._doneBy}
             label="Done By"
             value={details.done_by}
             onChange={(value) => changeDetail('done_by', value)}
@@ -700,8 +679,8 @@ export default function PurchaseReturnEntry() {
         className="gt-card"
       >
         <div className="gt-item-top">
-          <div className="gt-with-action">
-            <SearchableSelect
+          <SearchableSelect
+            action={<ManagedCreateButton entity="item" onClick={() => managed.begin('item')} />}
               label="Item Name"
               name="item_name"
               options={itemOptions}
@@ -712,8 +691,6 @@ export default function PurchaseReturnEntry() {
               error={itemErrors.item_name}
               emptyMessage="No active item found."
             />
-            
-          </div>
 
           <FormInput
             label="HSN Code"
@@ -970,14 +947,6 @@ export default function PurchaseReturnEntry() {
           : (editId ? 'Update Return' : 'Save Return')}
         </Button>
       </div>
-
-      <PartyFormModal
-        open={partyModalOpen}
-        mode="add"
-        submitting={submittingParty}
-        onClose={() => setPartyModalOpen(false)}
-        onSubmit={saveParty}
-      />
     </div>
   );
 }

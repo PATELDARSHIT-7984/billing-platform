@@ -48,3 +48,9 @@ export async function deleteBill(id) {
 
   return data;
 }
+
+
+export async function fetchNextBillNumbers() {
+  const { data } = await api.get(`${BILL_ENDPOINT}next-numbers`);
+  return data;
+}
