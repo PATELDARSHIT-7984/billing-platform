@@ -3,6 +3,7 @@ from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
 from api.model.account_gstin import AccountGSTIN
+from api.services.account_provisioning import sync_or_provision_account
 from api.utils.gstin import normalize_gstin
 
 DUPLICATE_GSTIN = "GSTIN is already used by another account."
@@ -34,16 +35,18 @@ def save_account(db, source, write):
                                     normalized_gstin=gstin))
         elif owner:
             db.delete(owner)
+        sync_or_provision_account(db, source, account)
         db.commit()
     except IntegrityError as error:
         db.rollback()
         constraint = getattr(getattr(error.orig, "diag", None), "constraint_name", None)
         # Retain existing domain indexes; a same-domain race can hit them first.
-        if constraint in {"uq_account_gstin", "customers_gstin_key", "ix_parties_gstin"} or any(
+        if constraint in {"uq_account_gstin", "uq_accounts_gstin", "customers_gstin_key", "ix_parties_gstin"} or any(
             marker in str(error.orig) for marker in (
                 "UNIQUE constraint failed: account_gstin_registry.normalized_gstin",
                 "UNIQUE constraint failed: customers.gstin",
                 "UNIQUE constraint failed: parties.gstin",
+                "UNIQUE constraint failed: accounts.gstin",
             )
         ):
             raise HTTPException(400, DUPLICATE_GSTIN) from None

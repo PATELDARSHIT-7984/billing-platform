@@ -1,3 +1,4 @@
+"""Validation layer for Party entities."""
 from fastapi import HTTPException, status
 
 from api.services.gstin_identity import validate_available
@@ -13,3 +14,4 @@ def validate_and_get_active_party(db, party_id: int):
 
 def validate_gstin_is_unique(db, gstin: str, exclude_id: int | None = None) -> None:
     validate_available(db, gstin, "party", exclude_id)
+

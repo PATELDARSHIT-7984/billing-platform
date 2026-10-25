@@ -27,6 +27,7 @@ class ItemMaster(Base):
     # GST
     cgst = Column(Float, default=9.0)
     sgst = Column(Float, default=9.0)
+    igst = Column(Float, default=0.0)
 
     # Other
     category = Column(String, nullable=True)
@@ -40,4 +41,6 @@ class ItemMaster(Base):
     is_active = Column(Boolean, default=True)
 
     created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())

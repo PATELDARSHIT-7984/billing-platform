@@ -1,10 +1,4 @@
-"""
-Business-rule validation layer for Customer records.
-
-Checks active Customer existence and PAN uniqueness. GSTIN uniqueness
-delegates to the global account identity service, including inactive owners.
-"""
-
+"""Validation layer for Customer entities."""
 from fastapi import HTTPException, status
 
 from api.services.gstin_identity import validate_available
@@ -25,7 +19,7 @@ def validate_gstin_is_unique(db, gstin: str, exclude_id: int | None = None) -> N
 def validate_pan_is_unique(db, pan_card: str, exclude_id: int | None = None) -> None:
     if not pan_card:
         return
-
     existing_pan = customer_repository.get_customer_by_pan(db, pan_card)
     if existing_pan and existing_pan.id != exclude_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="PAN already exists")
+

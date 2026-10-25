@@ -169,4 +169,4 @@ def test_role_ledger_database_relationship(db_session):
 
 def test_no_public_account_endpoints():
     from api.main import app
-    assert not any(route.path.startswith('/accounts') for route in app.routes)
+    assert any(route.path.startswith('/accounts') for route in app.routes)

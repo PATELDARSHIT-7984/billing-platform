@@ -24,7 +24,7 @@ class Purchase(Base):
     bill_date = Column(Date, nullable=False, default=func.current_date())
     due_term = Column(Integer, nullable=True)
     due_date = Column(Date, nullable=True)
-    party_id = Column(Integer, ForeignKey("parties.id"), nullable=False, index=True)
+    party_id = Column(Integer, nullable=True, index=True)
     is_gst = Column(Boolean, nullable=False, default=True)
     contact_person = Column(String(150), nullable=True)
     contact_no = Column(String(30), nullable=True)
@@ -51,7 +51,13 @@ class Purchase(Base):
     updated_at = Column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
     created_by = Column(Integer, nullable=True)
 
-    party = relationship("Party")
+    account_ledger = relationship("AccountLedger", foreign_keys=[account_ledger_id])
+
+    @property
+    def party(self):
+        if self.account_ledger and self.account_ledger.account_role:
+            return self.account_ledger.account_role.account
+        return None
     items = relationship(
         "PurchaseItem",
         back_populates="purchase",

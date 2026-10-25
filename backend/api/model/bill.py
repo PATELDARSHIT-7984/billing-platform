@@ -43,8 +43,8 @@ class Bill(Base):
 
     customer_id = Column(
         Integer,
-        ForeignKey("customers.id"),
-        nullable=False,
+        nullable=True,
+        index=True,
     )
 
     bill_date = Column(
@@ -246,7 +246,13 @@ class Bill(Base):
         onupdate=func.now(),
     )
 
-    customer = relationship("Customer")
+    account_ledger = relationship("AccountLedger", foreign_keys=[account_ledger_id])
+
+    @property
+    def customer(self):
+        if self.account_ledger and self.account_ledger.account_role:
+            return self.account_ledger.account_role.account
+        return None
 
     bill_items = relationship(
         "BillItem",

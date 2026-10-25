@@ -41,8 +41,8 @@ class Rojmel(Base):
     # (plural) and DoneBy's table is "employees" -- using the wrong
     # literal here doesn't fail at import time, only when the DDL/insert
     # actually hits Postgres, so it's an easy one to miss.
-    party_id = Column(Integer, ForeignKey("parties.id"), nullable=True)
-    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
+    party_id = Column(Integer, nullable=True, index=True)
+    customer_id = Column(Integer, nullable=True, index=True)
     cash_bank_id = Column(Integer, ForeignKey("banks.id"), nullable=False)
     done_by_id = Column(Integer, ForeignKey("doneby.id"), nullable=False)
 

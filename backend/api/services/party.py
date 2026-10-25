@@ -50,18 +50,32 @@ def apply_party_balance_delta(
     party_id: int,
     amount_delta: Decimal | int | float,
 ) -> Party:
-    """Apply a signed payable delta; the caller owns commit and rollback."""
+    """Apply a signed payable delta to Party and synchronized AccountLedger in lockstep."""
     party = party_repo.get_party_for_balance_update(db, party_id)
     if not party:
+        from api.model.legacy_account_map import LegacyAccountMap
+        from api.services.account_provisioning import apply_account_ledger_delta
+        mapping = db.query(LegacyAccountMap).filter_by(legacy_source="party", legacy_id=party_id).first()
+        if mapping:
+            return apply_account_ledger_delta(db, mapping.account_ledger_id, amount_delta, sync_legacy=True)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Party not found")
 
     amount, direction = balance_after_delta(party.current_balance, party.current_balance_type, amount_delta)
-    return party_repo.set_party_current_balance(
+    pty = party_repo.set_party_current_balance(
         db,
         party,
         amount,
         direction,
     )
+
+    # Synchronize AccountLedger
+    from api.model.legacy_account_map import LegacyAccountMap
+    from api.services.account_provisioning import apply_account_ledger_delta
+    mapping = db.query(LegacyAccountMap).filter_by(legacy_source="party", legacy_id=party_id).first()
+    if mapping:
+        apply_account_ledger_delta(db, mapping.account_ledger_id, amount_delta, sync_legacy=False)
+
+    return pty
 
 
 def create_party(db: Session, data: PartyCreate) -> Party:
@@ -160,6 +174,8 @@ def delete_party_by_id(db: Session, party_id: int):
     party = party_validation.validate_and_get_active_party(db, party_id=party_id)
 
     party_repo.deactivate_party(db, party=party)
+    from api.services.account_provisioning import deactivate_legacy_account
+    deactivate_legacy_account(db, "party", party_id)
     db.commit()
 
     return {"message": f"Party '{party.name}' deleted successfully."}
