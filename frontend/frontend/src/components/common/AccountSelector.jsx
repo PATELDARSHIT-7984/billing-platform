@@ -2,13 +2,26 @@ import ManagedCreateButton from './ManagedCreateButton';
 import { useEffect, useState } from 'react';
 import SearchableSelect from './SearchableSelect';
 import { FormSelect } from './FormField';
-import { accountTypesForSource, fetchAccounts, fetchAccountRecord, normalizeAccountRecord } from '../../services/accountService';
+import { ACCOUNT_TYPES, fetchAccounts, fetchAccountRecord, normalizeAccountRecord } from '../../services/accountService';
 import { extractErrorMessage } from '../../services/api';
 import './AccountSelector.css';
 
-export default function AccountSelector({ domain, source = domain || 'party', value, record, defaultType,
-  onChange, name = 'account', required = false, error = '', disabled = false, onCreate }) {
-  const types = accountTypesForSource(domain);
+export default function AccountSelector({
+  domain,
+  source = domain || 'party',
+  value,
+  record,
+  defaultType,
+  onChange,
+  name = 'account',
+  required = false,
+  error = '',
+  disabled = false,
+  onCreate,
+  allowCustom = false,
+  customValue = '',
+}) {
+  const types = ACCOUNT_TYPES;
   const [type, setType] = useState(defaultType || (domain === 'customer' ? 'CUSTOMER' : 'SUPPLIER'));
   const [search, setSearch] = useState('');
   const [resolved, setResolved] = useState(null);
@@ -45,26 +58,59 @@ export default function AccountSelector({ domain, source = domain || 'party', va
 
   const rows = result.key === key ? result.items : [];
   const visibleRows = selected && !search && !rows.some((row) => row.id === selected.id) ? [selected, ...rows] : rows;
-  const options = visibleRows.map((row) => ({ value: row.id, label: row.name,
-    meta: row.city || row.mobile || '', source: row.source, accountType: row.accountType, record: row }));
+  const options = visibleRows.map((row) => ({
+    value: row.id,
+    label: row.name,
+    meta: row.city || row.mobile || '',
+    source: row.source,
+    accountType: row.accountType,
+    record: row,
+  }));
   // Historical legacy Party Customers are shown, never silently converted.
   const typeOptions = selected && !selectedType ? [{ value: 'legacy', label: selected.unavailable ? 'Saved Party' : 'Legacy Party' }, ...types] : types;
 
-  return <div className="account-selector">
-    <FormSelect label="Account Type" name={`${name}_type`} options={typeOptions}
-      value={selected && !selectedType ? 'legacy' : effectiveType} disabled={disabled || initializing}
-      onChange={(next) => {
-        setType(next); setSearch(''); setResolved(null); setLookupError('');
-        onChange(null, next);
-      }} />
-    <SearchableSelect action={onCreate ? <ManagedCreateButton entity="account" disabled={disabled || initializing} onClick={() => onCreate(effectiveType)} /> : null} key={effectiveType} label={required ? 'Account' : 'Account (optional)'} name={name}
-      value={value} selectedLabel={selected?.name || ''} options={required ? options : [{ value: '', label: 'None' }, ...options]}
-      required={required} disabled={disabled || initializing} placeholder="Search accounts..."
-      error={error || lookupError || (selected?.unavailable ? 'Saved account is unavailable for new selections.' : '') || (result.key === key ? result.error : '')}
-      emptyMessage={result.key !== key ? 'Loading accounts...' : 'No matching accounts.'}
-      onSearchChange={setSearch} onChange={(option) => {
-        setType(option.accountType || effectiveType); setSearch('');
-        setResolved(option.record || null); onChange(option.value === '' ? null : option);
-      }} />
-  </div>;
+  return (
+    <div className="account-selector">
+      <FormSelect
+        label="Account Type"
+        name={`${name}_type`}
+        options={typeOptions}
+        value={selected && !selectedType ? 'legacy' : effectiveType}
+        disabled={disabled || initializing}
+        onChange={(next) => {
+          setType(next);
+          setSearch('');
+          setResolved(null);
+          setLookupError('');
+          onChange(null, next);
+        }}
+      />
+      <SearchableSelect
+        action={onCreate ? <ManagedCreateButton entity="account" disabled={disabled || initializing} onClick={() => onCreate(effectiveType)} /> : null}
+        key={effectiveType}
+        label={required ? 'Account' : 'Account (optional)'}
+        name={name}
+        value={value}
+        selectedLabel={selected?.name || customValue || ''}
+        options={required ? options : [{ value: '', label: 'None' }, ...options]}
+        required={required}
+        disabled={disabled || initializing}
+        placeholder="Search accounts or enter name..."
+        allowCustom={allowCustom}
+        error={error || lookupError || (selected?.unavailable ? 'Saved account is unavailable for new selections.' : '') || (result.key === key ? result.error : '')}
+        emptyMessage={result.key !== key ? 'Loading accounts...' : 'No matching accounts.'}
+        onSearchChange={setSearch}
+        onChange={(option) => {
+          if (option?.isCustom) {
+            onChange(option);
+            return;
+          }
+          setType(option?.accountType || effectiveType);
+          setSearch('');
+          setResolved(option?.record || null);
+          onChange(option?.value === '' ? null : option);
+        }}
+      />
+    </div>
+  );
 }
