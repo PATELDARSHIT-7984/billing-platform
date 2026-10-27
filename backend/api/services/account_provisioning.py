@@ -277,12 +277,22 @@ def resolve_ledger_reference(db: Session, source: str, legacy_id: int | None) ->
     if not legacy_id:
         return None, None
     mapping = db.get(LegacyAccountMap, (source, legacy_id))
+    if not mapping and source == "customer":
+        mapping = db.get(LegacyAccountMap, ("party", legacy_id))
+    elif not mapping and source == "party":
+        mapping = db.get(LegacyAccountMap, ("customer", legacy_id))
     if mapping:
         return mapping.account_ledger_id, mapping.account_role
 
     from api.model.customer import Customer
     from api.model.party import Party
     legacy_row = db.get(Customer if source == "customer" else Party, legacy_id)
+    if not legacy_row:
+        legacy_row = db.get(Party if source == "customer" else Customer, legacy_id)
+        if legacy_row:
+            alt_source = "party" if source == "customer" else "customer"
+            _, role, ledger, _ = provision_legacy_account(db, alt_source, legacy_row)
+            return ledger.id, role.role.value
     if legacy_row:
         _, role, ledger, _ = provision_legacy_account(db, source, legacy_row)
         return ledger.id, role.role.value
@@ -297,6 +307,10 @@ def resolve_ledger_reference(db: Session, source: str, legacy_id: int | None) ->
         ledger = db.query(AccountLedger).filter(
             AccountLedger.account_id == legacy_id,
             AccountLedger.role == AccountRoleCode.PURCHASE_VENDOR,
+        ).first()
+    if not ledger:
+        ledger = db.query(AccountLedger).filter(
+            AccountLedger.account_id == legacy_id,
         ).first()
     if ledger:
         return ledger.id, ledger.role.value if hasattr(ledger.role, "value") else str(ledger.role)

@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.config.database import engine
 from api.config.database import Base
+from api.config.schema_sync import sync_database_schema
 from api.config.exceptions import AppException
 from fastapi.exceptions import RequestValidationError
 from api.config.exception_handlers import (
@@ -18,6 +19,7 @@ from api.router import purchase_return
 from api.router import quotation
 from api.router import sales_return
 from api.router import dashboard
+from api.router import account
 
 pytest_plugins = (
     "api.tests.fixtures.party_fixtures",
@@ -25,7 +27,19 @@ pytest_plugins = (
 
 app = FastAPI()
 
-Base.metadata.create_all(bind=engine)
+try:
+    Base.metadata.create_all(bind=engine)
+    sync_database_schema(engine)
+except Exception:
+    pass
+
+
+@app.on_event("startup")
+def on_startup():
+    try:
+        sync_database_schema(engine)
+    except Exception:
+        pass
 
 app.add_middleware(
         CORSMiddleware,
@@ -43,6 +57,7 @@ app.include_router(item_master.router)
 app.include_router(purchase_return.router)
 app.include_router(quotation.router)
 app.include_router(sales_return.router)
+app.include_router(account.router)
 app.add_exception_handler(AppException, app_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(Exception, general_exception_handler)

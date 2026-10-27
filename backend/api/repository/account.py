@@ -29,8 +29,10 @@ def generate_account_code(db: Session) -> str:
     dialect_name = get_database_dialect_name(db)
     if dialect_name == "postgresql":
         try:
-            val = get_next_account_code_sequence_value(db)
-            return f"ACC-{int(val):04d}"
+            seq_exists = db.execute(text("SELECT to_regclass('public.account_code_seq')")).scalar()
+            if seq_exists:
+                val = get_next_account_code_sequence_value(db)
+                return f"ACC-{int(val):04d}"
         except Exception:
             pass
 
