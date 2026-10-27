@@ -265,7 +265,7 @@ class QuotationListResponse(BaseModel):
     id: int
     quotation_no: str
     quotation_date: date
-    customer_id: int
+    customer_id: Optional[int] = None
     customer_name: Optional[str] = None
 
     item_count: int = 0
