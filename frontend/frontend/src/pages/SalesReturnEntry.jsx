@@ -558,16 +558,33 @@ export default function SalesReturnEntry() {
           />
           <FormInput label="Due Date" type="date" value={details.due_date} disabled />
 
-          <FormTextarea label="Address" value={details.address} onChange={() => {}} rows={2} disabled />
-          <FormInput label="City" value={details.city} onChange={() => {}} disabled />
+          <FormTextarea
+            label="Address"
+            value={details.address}
+            onChange={(value) => changeDetail('address', value)}
+            rows={2}
+          />
+          <FormInput
+            label="City"
+            value={details.city}
+            onChange={(value) => changeDetail('city', value)}
+          />
           <FormSelect
             label="State"
             value={details.customer_state || ''}
             onChange={(value) => changeDetail('customer_state', value)}
             options={STATE_OPTIONS}
           />
-          <FormInput label="Contact No." value={details.contact_no} onChange={() => {}} disabled />
-          <FormInput label="Email" value={details.email} onChange={() => {}} disabled />
+          <FormInput
+            label="Contact No."
+            value={details.contact_no}
+            onChange={(value) => changeDetail('contact_no', value)}
+          />
+          <FormInput
+            label="Email"
+            value={details.email}
+            onChange={(value) => changeDetail('email', value)}
+          />
           <DoneBySelect
             onCreate={() => managed.begin('doneBy')} createdPerson={details._doneBy}
             label="Done By"

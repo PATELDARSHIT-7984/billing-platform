@@ -55,6 +55,7 @@ const STATE_OPTIONS = STATES.map((value) => ({
 
 const createEmptyDetails = () => ({
   customer_id: null,
+  customer_name: '',
   quotation_no: '',
   order_no: '',
   quotation_date: today(),
@@ -173,11 +174,15 @@ export default function QuotationEntry() {
 
     fetchQuotationById(editId)
       .then(async (quotation) => {
-        const customer = await fetchAccountRecord('customer', quotation.customer_id, quotation);
+        let customer = null;
+        if (quotation.customer_id) {
+          customer = await fetchAccountRecord('customer', quotation.customer_id, quotation).catch(() => null);
+        }
 
         setDetails({
           _account: customer,
           customer_id: quotation.customer_id ?? null,
+          customer_name: quotation.customer_name || customer?.name || '',
           quotation_no: quotation.quotation_no || '',
           order_no: quotation.order_no || '',
           quotation_date: quotation.quotation_date || today(),
@@ -301,6 +306,7 @@ export default function QuotationEntry() {
       ...previous,
       _account: customer,
       customer_id: getCustomerId(customer),
+      customer_name: customer?.name || customer?.customer_name || previous.customer_name || '',
       address: customer?.address || '',
       city: customer?.city || '',
       customer_state: customer?.state || '',
@@ -323,6 +329,22 @@ export default function QuotationEntry() {
   };
 
   const selectCustomer = (option) => {
+    if (!option) {
+      applySelectedCustomer(null);
+      return;
+    }
+
+    if (option.isCustom) {
+      setDetails((previous) => ({
+        ...previous,
+        _account: null,
+        customer_id: null,
+        customer_name: option.label,
+      }));
+      setDetailErrors((previous) => ({ ...previous, customer_id: '' }));
+      return;
+    }
+
     const nextId = option?.value ?? null;
     const currentId = details.customer_id ?? null;
 
@@ -334,6 +356,10 @@ export default function QuotationEntry() {
     }
 
     applySelectedCustomer(option.record);
+    setDetails((previous) => ({
+      ...previous,
+      customer_name: option.label,
+    }));
     toast.success('Customer changed. Items and delivery details were cleared.');
   };
 
@@ -437,7 +463,7 @@ export default function QuotationEntry() {
 
   const saveQuotation = () => {
     const errors = {};
-    if (!details.customer_id) errors.customer_id = 'Customer is required.';
+    if (!details.customer_id && !details.customer_name?.trim()) errors.customer_id = 'Customer is required.';
     if (!details.quotation_date) errors.quotation_date = 'Quotation date is required.';
 
     if (details.show_shipping_address_on_bill) {
@@ -459,7 +485,8 @@ export default function QuotationEntry() {
     const payload = {
       quotation_no: details.quotation_no || null,
       order_no: details.order_no || null,
-      customer_id: Number(details.customer_id),
+      customer_id: details.customer_id ? Number(details.customer_id) : null,
+      customer_name: details.customer_name?.trim() || details._account?.name || null,
       quotation_date: details.quotation_date,
       due_term: details.due_term === '' ? null : Number(details.due_term),
       due_date: details.due_date || null,
@@ -534,8 +561,9 @@ export default function QuotationEntry() {
         <div className="gt-details-grid">
           <AccountSelector domain="customer" record={details._account}
               defaultType={details._accountType}
-              onCreate={(accountType) => managed.begin('account', { accountType, source: 'customer' })}
               value={details.customer_id}
+              allowCustom
+              customValue={details.customer_name}
               onChange={(option, type) => { setDetails((previous) => ({ ...previous, _accountType: option?.accountType || type })); selectCustomer(option); }}
               required
               error={detailErrors.customer_id}
@@ -560,16 +588,33 @@ export default function QuotationEntry() {
           />
           <FormInput label="Due Date" type="date" value={details.due_date} disabled />
 
-          <FormTextarea label="Address" value={details.address} onChange={() => {}} rows={2} disabled />
-          <FormInput label="City" value={details.city} onChange={() => {}} disabled />
+          <FormTextarea
+            label="Address"
+            value={details.address}
+            onChange={(value) => changeDetail('address', value)}
+            rows={2}
+          />
+          <FormInput
+            label="City"
+            value={details.city}
+            onChange={(value) => changeDetail('city', value)}
+          />
           <FormSelect
             label="State"
             value={details.customer_state || ''}
             onChange={(value) => changeDetail('customer_state', value)}
             options={STATE_OPTIONS}
           />
-          <FormInput label="Contact No." value={details.contact_no} onChange={() => {}} disabled />
-          <FormInput label="Email" value={details.email} onChange={() => {}} disabled />
+          <FormInput
+            label="Contact No."
+            value={details.contact_no}
+            onChange={(value) => changeDetail('contact_no', value)}
+          />
+          <FormInput
+            label="Email"
+            value={details.email}
+            onChange={(value) => changeDetail('email', value)}
+          />
           <DoneBySelect
             onCreate={() => managed.begin('doneBy')} createdPerson={details._doneBy}
             label="Done By"
