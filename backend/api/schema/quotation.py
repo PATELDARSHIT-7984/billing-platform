@@ -46,7 +46,8 @@ class QuotationCreate(BaseModel):
     due_term: Optional[int] = Field(default=None, ge=0, le=3650)
     due_date: Optional[date] = None
 
-    customer_id: int = Field(..., gt=0)
+    customer_id: Optional[int] = Field(default=None, gt=0)
+    customer_name: Optional[str] = Field(default=None, max_length=255)
     is_gst: bool = True
 
     address: Optional[str] = None
@@ -131,6 +132,7 @@ class QuotationUpdate(BaseModel):
     due_date: Optional[date] = None
 
     customer_id: Optional[int] = Field(default=None, gt=0)
+    customer_name: Optional[str] = Field(default=None, max_length=255)
     is_gst: Optional[bool] = None
 
     address: Optional[str] = None
@@ -217,7 +219,7 @@ class QuotationResponse(BaseModel):
     due_term: Optional[int] = None
     due_date: Optional[date] = None
 
-    customer_id: int
+    customer_id: Optional[int] = None
     customer_name: Optional[str] = None
 
     is_gst: bool

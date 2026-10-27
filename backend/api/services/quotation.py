@@ -114,9 +114,9 @@ def _attach_history_fields(
     quotation: Quotation,
 ) -> Quotation:
     quotation.customer_name = (
-        quotation.customer.customer_name
-        if quotation.customer
-        else "Unknown"
+        quotation.customer_name
+        or (quotation.customer.customer_name if quotation.customer else None)
+        or "Unknown"
     )
 
     quotation.item_count = len(quotation.items)
@@ -172,12 +172,20 @@ def create_quotation(
 ) -> Quotation:
     validate_done_by_snapshot(db, quotation_data.done_by)
 
-    customer = (
-        quotation_validation
-        .validate_and_get_active_customer(
-            db,
-            quotation_data.customer_id,
+    customer = None
+    if quotation_data.customer_id:
+        customer = (
+            quotation_validation
+            .validate_and_get_active_customer(
+                db,
+                quotation_data.customer_id,
+            )
         )
+
+    customer_name = (
+        quotation_data.customer_name.strip()
+        if quotation_data.customer_name and quotation_data.customer_name.strip()
+        else (getattr(customer, "customer_name", None) or getattr(customer, "account_name", None) or getattr(customer, "name", None) if customer else None)
     )
 
     quotation_no = (
@@ -239,7 +247,8 @@ def create_quotation(
         "quotation_date": quotation_data.quotation_date,
         "due_term": quotation_data.due_term,
         "due_date": due_date,
-        "customer_id": customer.id,
+        "customer_id": customer.id if customer else None,
+        "customer_name": customer_name,
         "is_gst": quotation_data.is_gst,
         "address": quotation_data.address,
         "city": quotation_data.city,
@@ -354,19 +363,25 @@ def update_quotation_by_id(
     fields = quotation_data.model_fields_set
     update_payload = {}
 
-    if (
-        "customer_id" in fields
-        and quotation_data.customer_id is not None
-    ):
-        customer = (
-            quotation_validation
-            .validate_and_get_active_customer(
-                db,
-                quotation_data.customer_id,
+    if "customer_id" in fields:
+        if quotation_data.customer_id is not None:
+            customer = (
+                quotation_validation
+                .validate_and_get_active_customer(
+                    db,
+                    quotation_data.customer_id,
+                )
             )
-        )
+            update_payload["customer_id"] = customer.id
+            update_payload["account_id"] = resolve_account_reference(db, "customer", quotation_data.customer_id)
+            if "customer_name" not in fields or not quotation_data.customer_name:
+                update_payload["customer_name"] = getattr(customer, "customer_name", None) or getattr(customer, "account_name", None) or getattr(customer, "name", None)
+        else:
+            update_payload["customer_id"] = None
+            update_payload["account_id"] = None
 
-        update_payload["customer_id"] = customer.id
+    if "customer_name" in fields and quotation_data.customer_name:
+        update_payload["customer_name"] = quotation_data.customer_name.strip()
 
     if (
         "quotation_no" in fields

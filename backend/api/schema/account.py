@@ -19,7 +19,7 @@ def _check_direction(amount, direction):
 
 
 class AccountBase(BaseModel):
-    model_config = ConfigDict(extra="forbid", from_attributes=True, str_strip_whitespace=True)
+    model_config = ConfigDict(extra="ignore", from_attributes=True, str_strip_whitespace=True)
     account_name: str = Field(min_length=2, max_length=200)
     country_code: str | None = Field(default=None, max_length=10)
     mobile: str | None = Field(default=None, max_length=20)
@@ -39,6 +39,20 @@ class AccountBase(BaseModel):
     _pan = field_validator("pan_card")(normalize_pan)
     _state_code = field_validator("state_code")(normalize_state_code)
 
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_empty_email(cls, v):
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
+
+    @field_validator("mobile", "address", "city", "pincode", "remarks", mode="before")
+    @classmethod
+    def normalize_empty_strings(cls, v):
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
+
     @model_validator(mode="after")
     def consistent_tax_identity(self):
         if self.state_code is None and self.state:
@@ -55,11 +69,39 @@ class AccountBase(BaseModel):
 
 
 class AccountRoleInput(BaseModel):
-    model_config = ConfigDict(extra="forbid", from_attributes=True)
+    model_config = ConfigDict(extra="ignore", from_attributes=True)
     role: AccountRoleCode
     opening_balance: Money = Decimal("0.00")
     balance_type: BalanceType | None = None
     opening_remark: str | None = None
+
+    @field_validator("role", mode="before")
+    @classmethod
+    def normalize_role(cls, v):
+        if isinstance(v, str):
+            v_upper = v.strip().upper()
+            if v_upper in ("CUSTOMER", "SUPPLIER", "PURCHASE_VENDOR"):
+                return v_upper
+        return v
+
+    @model_validator(mode="before")
+    @classmethod
+    def sanitize_opening_balance(cls, data):
+        if isinstance(data, dict):
+            bal = data.get("opening_balance")
+            try:
+                dec_bal = Decimal(str(bal)) if bal is not None else Decimal("0")
+            except Exception:
+                dec_bal = Decimal("0")
+            if dec_bal == 0:
+                data["balance_type"] = None
+            else:
+                bt = data.get("balance_type")
+                if isinstance(bt, str):
+                    bt_norm = bt.strip().capitalize()
+                    if bt_norm in ("Credit", "Debit"):
+                        data["balance_type"] = bt_norm
+        return data
 
     @model_validator(mode="after")
     def opening_direction(self):

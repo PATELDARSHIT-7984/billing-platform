@@ -34,6 +34,7 @@ class Quotation(Base):
         nullable=True,
         index=True,
     )
+    customer_name = Column(String(255), nullable=True)
 
     is_gst = Column(Boolean, nullable=False, default=True)
 

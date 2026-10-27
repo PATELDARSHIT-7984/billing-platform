@@ -22,8 +22,19 @@ from api.repository import item_master as item_master_repository
 from api.repository import party as party_repository
 
 
-def get_active_party_by_id(db: Session, party_id: int) -> Party | None:
-    return party_repository.get_party_by_id(db, party_id)
+def get_active_party_by_id(db: Session, party_id: int):
+    party = party_repository.get_party_by_id(db, party_id)
+    if party:
+        return party
+    from api.model.customer import Customer
+    from api.model.account import Account
+    cust = db.query(Customer).filter(Customer.id == party_id, Customer.is_active == True).first()
+    if cust:
+        return cust
+    account = db.query(Account).filter(Account.id == party_id, Account.is_active == True).first()
+    if account:
+        return account
+    return None
 
 
 def get_active_item_by_id(db: Session, item_id: int):

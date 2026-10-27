@@ -23,58 +23,63 @@ from api.services.account_provisioning import (
 
 def create_account(db: Session, data: AccountCreate) -> Account:
     """Create a unified account with one or more roles and initial ledgers."""
-    # 1. Resolve or auto-generate unique account code
-    code = data.account_code.strip() if data.account_code and data.account_code.strip() else None
-    if code:
-        account_validation.validate_account_code_is_unique(db, code)
-    else:
-        code = account_repo.generate_account_code(db)
+    try:
+        # 1. Resolve or auto-generate unique account code
+        code = data.account_code.strip() if data.account_code and data.account_code.strip() else None
+        if code:
+            account_validation.validate_account_code_is_unique(db, code)
+        else:
+            code = account_repo.generate_account_code(db)
 
-    # 2. Validate GSTIN uniqueness if provided
-    if data.gstin:
-        account_validation.validate_gstin_is_unique(db, data.gstin)
+        # 2. Validate GSTIN uniqueness if provided
+        if data.gstin:
+            account_validation.validate_gstin_is_unique(db, data.gstin)
 
-    # 3. Derive consistent state, state_code, and PAN
-    state, state_code, pan = _resolve_state_and_pan(
-        data.gstin, data.state, data.state_code, data.pan_card
-    )
+        # 3. Derive consistent state, state_code, and PAN
+        state, state_code, pan = _resolve_state_and_pan(
+            data.gstin, data.state, data.state_code, data.pan_card
+        )
 
-    # 4. Normalize roles (default to CUSTOMER role with ₹0.00 if omitted)
-    roles_input = data.roles
-    if not roles_input:
-        roles_input = [AccountRoleInput(role=AccountRoleCode.CUSTOMER, opening_balance=Decimal("0.00"), balance_type=None)]
+        # 4. Normalize roles (default to CUSTOMER role with ₹0.00 if omitted)
+        roles_input = data.roles
+        if not roles_input:
+            roles_input = [AccountRoleInput(role=AccountRoleCode.CUSTOMER, opening_balance=Decimal("0.00"), balance_type=None)]
 
-    account_payload = {
-        "account_code": code,
-        "account_name": data.account_name.strip(),
-        "country_code": data.country_code or "+91",
-        "mobile": data.mobile.strip() if data.mobile else None,
-        "email": data.email,
-        "address": data.address.strip() if data.address else None,
-        "city": data.city.strip() if data.city else None,
-        "state": state,
-        "pincode": data.pincode.strip() if data.pincode else None,
-        "state_code": state_code,
-        "gstin": data.gstin,
-        "gstin_pending": data.gstin_pending,
-        "pan_card": pan,
-        "remarks": data.remarks.strip() if data.remarks else None,
-        "is_active": data.is_active,
-    }
-
-    roles_payload = [
-        {
-            "role": r.role,
-            "opening_balance": r.opening_balance,
-            "balance_type": r.balance_type,
-            "opening_remark": r.opening_remark,
+        account_payload = {
+            "account_code": code,
+            "account_name": data.account_name.strip(),
+            "country_code": data.country_code or "+91",
+            "mobile": data.mobile.strip() if data.mobile else None,
+            "email": data.email,
+            "address": data.address.strip() if data.address else None,
+            "city": data.city.strip() if data.city else None,
+            "state": state,
+            "pincode": data.pincode.strip() if data.pincode else None,
+            "state_code": state_code,
+            "gstin": data.gstin,
+            "gstin_pending": data.gstin_pending,
+            "pan_card": pan,
+            "remarks": data.remarks.strip() if data.remarks else None,
+            "is_active": data.is_active,
         }
-        for r in roles_input
-    ]
 
-    account = account_repo.create_account(db, account_payload, roles_payload)
-    db.commit()
-    return account
+        roles_payload = [
+            {
+                "role": r.role,
+                "opening_balance": r.opening_balance,
+                "balance_type": r.balance_type,
+                "opening_remark": r.opening_remark,
+            }
+            for r in roles_input
+        ]
+
+
+        account = account_repo.create_account(db, account_payload, roles_payload)
+        db.commit()
+        return account
+    except Exception:
+        db.rollback()
+        raise
 
 
 def get_account_by_id(db: Session, account_id: int) -> Account:
